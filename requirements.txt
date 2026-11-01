@@ -1,6 +1,6 @@
-google-genai
-requests
-pillow
-opencv-python
-python-dotenv
+google-genai==2.34.0
+requests==2.34.2
+pillow==13.0.0
+opencv-python==5.0.0.93
+python-dotenv==1.2.4
 # pytesseract  # logo OCR, build step 5

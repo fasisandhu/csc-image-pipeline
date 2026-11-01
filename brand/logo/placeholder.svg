@@ -1,0 +1,5 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 200 200" width="200" height="200">
+  <!-- TODO: replace with the final Cut Sew Club logo vector -->
+  <circle cx="100" cy="100" r="92" fill="none" stroke="#111111" stroke-width="8"/>
+  <text x="100" y="118" text-anchor="middle" font-family="Helvetica, Arial, sans-serif" font-size="56" font-weight="700" fill="#111111">CSC</text>
+</svg>

@@ -1,0 +1,29 @@
+{
+  "_note": "Invented people. Reuse each description word for word in every prompt of a set.",
+  "cast": {
+    "Amir": {
+      "description": "South Asian man, mid-20s, short black fade, light stubble, slim athletic build, 180 cm",
+      "height_cm": 180,
+      "use": ["hero", "streetwear", "fit comparison"],
+      "reference_sheet": "TODO: refs/cast/amir.png once approved"
+    },
+    "Maya": {
+      "description": "Black woman, early 20s, natural hair in a low puff, medium build, 168 cm",
+      "height_cm": 168,
+      "use": ["streetwear", "oversized", "back prints"],
+      "reference_sheet": "TODO: refs/cast/maya.png once approved"
+    },
+    "Leo": {
+      "description": "White man, late 20s, curly brown hair, short beard, broad build, 185 cm",
+      "height_cm": 185,
+      "use": ["zip hoodie", "staff shots"],
+      "reference_sheet": "TODO: refs/cast/leo.png once approved"
+    },
+    "Hana": {
+      "description": "East Asian woman, mid-20s, straight black bob, slim build, 165 cm",
+      "height_cm": 165,
+      "use": ["lifestyle", "decoration on body"],
+      "reference_sheet": "TODO: refs/cast/hana.png once approved"
+    }
+  }
+}

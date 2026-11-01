@@ -1,0 +1,42 @@
+{
+  "id": "pullover-classic",
+  "style_name": "Classic Pullover Hoodie",
+  "fit": "TODO: confirm wording. Regular fit, set-in shoulder, body follows the torso without excess width.",
+  "shoulder": "set-in",
+  "size_range": "TODO: e.g. S-XXL",
+  "measurements_cm": {
+    "_note": "Sample size used for renders. Add other sizes if needed.",
+    "M": {"chest_width": "TODO", "body_length": "TODO", "sleeve_length": "TODO", "shoulder_width": "TODO"}
+  },
+  "gsm_options": [320, 380, 450],
+  "weight_look": {
+    "320": "drapes softly",
+    "380": "holds gentle structure",
+    "450": "stands away from the body, with thick rib and a hood that keeps its shape"
+  },
+  "fabric": "TODO: exact blend, e.g. 80/20 cotton-poly brushed-back fleece",
+  "colours": [
+    {"id": "washed-black", "name": "Washed Black", "hex": "TODO", "pantone": "TODO", "status": "TODO: confirm offered"},
+    {"id": "TODO", "name": "TODO", "hex": "TODO", "pantone": "TODO"}
+  ],
+  "construction": {
+    "hood": "double-layer hood with centre seam",
+    "drawcords": "flat drawcords with metal aglets, through metal eyelets",
+    "pockets": "kangaroo pocket, openings symmetrical, attached at the hem",
+    "cuffs_hem": "2x2 rib cuffs and hem, distinct from the body fabric",
+    "seams": "coverstitched seams",
+    "zip": null
+  },
+  "decoration_placements": {
+    "left chest": {"max_cm": 9},
+    "centre chest": {"max_cm": 22},
+    "full back": {"max_cm": 30},
+    "sleeve": {"max_cm": "TODO"}
+  },
+  "decoration_types": ["flat embroidery", "3D puff embroidery", "screen print"],
+  "labels": {
+    "neck": {"type": "woven", "size_cm": [5, 2]},
+    "hang_tag": {"spec": "TODO: size, stock, finish, attachment"}
+  },
+  "moq": 30
+}

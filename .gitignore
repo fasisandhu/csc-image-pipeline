@@ -1,0 +1,23 @@
+# Secrets
+.env
+.env.*
+!.env.example
+
+# Generated output (drafts, finals, rejects, cost log)
+out/
+
+# Client artwork: never committed
+clients/
+*.ai
+*.eps
+*.psd
+
+# Python
+__pycache__/
+*.pyc
+.venv/
+venv/
+.pytest_cache/
+
+# SpecStory chat transcripts
+.specstory/history/

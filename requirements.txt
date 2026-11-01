@@ -1,0 +1,6 @@
+google-genai
+requests
+pillow
+opencv-python
+python-dotenv
+# pytesseract  # logo OCR, build step 5

@@ -1,0 +1,25 @@
+{
+  "name": "Cut Sew Club",
+  "website": "https://cutsewclub.vercel.app/",
+  "location": "Lahore, Pakistan (production partner in Sialkot)",
+  "colours": {
+    "primary": {"name": "TODO", "hex": "TODO", "pantone": "TODO"},
+    "secondary": {"name": "TODO", "hex": "TODO", "pantone": "TODO"},
+    "accent": {"name": "TODO", "hex": "TODO", "pantone": "TODO"},
+    "neutral_light": {"name": "TODO", "hex": "TODO", "pantone": "TODO"},
+    "neutral_dark": {"name": "TODO", "hex": "TODO", "pantone": "TODO"}
+  },
+  "fonts": {
+    "heading": "TODO",
+    "body": "TODO"
+  },
+  "logo": {
+    "primary": "brand/logo/placeholder.svg",
+    "status": "TODO: placeholder until the real logo is final"
+  },
+  "style_block": "clean editorial streetwear catalogue, true-to-life colour, soft natural contrast, no film grain",
+  "captions": {
+    "concept_render": "Concept render. Production photos are shot for every order.",
+    "on_model": "AI model, concept render"
+  }
+}

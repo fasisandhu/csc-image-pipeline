@@ -2,8 +2,7 @@
   "id": "pullover-classic",
   "_confirm": [
     "fit wording",
-    "shoulder: set-in",
-    "colour offered: washed-black"
+    "shoulder: set-in"
   ],
   "style_name": "Classic Pullover Hoodie",
   "fit": "Regular fit, set-in shoulder, body follows the torso without excess width.",
@@ -29,20 +28,7 @@
     "450": "stands away from the body, with thick rib and a hood that keeps its shape"
   },
   "fabric": "TODO: exact blend, e.g. 80/20 cotton-poly brushed-back fleece",
-  "colours": [
-    {
-      "id": "washed-black",
-      "name": "Washed Black",
-      "hex": "TODO",
-      "pantone": "TODO"
-    },
-    {
-      "id": "TODO",
-      "name": "TODO",
-      "hex": "TODO",
-      "pantone": "TODO"
-    }
-  ],
+  "colours": "any: customer's choice. Sample images use brand/palette.json or a custom colour in the spec.",
   "construction": {
     "hood": "double-layer hood with centre seam",
     "drawcords": "flat drawcords with metal aglets, through metal eyelets",

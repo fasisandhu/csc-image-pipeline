@@ -8,6 +8,7 @@ are left out of the prompt and reported as warnings, never invented.
 from __future__ import annotations
 
 import json
+import re
 import sys
 from dataclasses import asdict, dataclass, field
 from pathlib import Path
@@ -69,6 +70,18 @@ def _lower_first(text: str) -> str:
     return text[:1].lower() + text[1:]
 
 
+def resolve_colour(colour: str | dict) -> dict:
+    """Colour is free choice: a brand/palette.json id, or a custom {"name", "hex"}."""
+    if isinstance(colour, str):
+        palette = load_json("brand/palette.json")["colours"]
+        if colour not in palette:
+            raise CompileError(f"colour {colour!r} not in brand/palette.json; use a palette id or {{\"name\", \"hex\"}}")
+        return palette[colour]
+    if not colour.get("name") or not re.fullmatch(r"#[0-9A-Fa-f]{6}", colour.get("hex") or ""):
+        raise CompileError(f"custom colour needs a name and a #RRGGBB hex, got {colour!r}")
+    return colour
+
+
 def _ref_role(path: str) -> str:
     if path.startswith("refs/anchors/"):
         return REF_ROLES["anchor"]
@@ -90,9 +103,7 @@ def compile_spec(spec: dict) -> Compiled:
     if not (ROOT / cat_path).exists():
         raise CompileError(f"unknown catalogue entry {g['catalogue']!r}")
     cat = load_json(cat_path)
-    colour = next((c for c in cat["colours"] if c["id"] == g["colour"]), None)
-    if colour is None:
-        raise CompileError(f"colour {g['colour']!r} not in {cat_path.as_posix()}")
+    colour = resolve_colour(g["colour"])
     if g["gsm"] not in cat["gsm_options"]:
         raise CompileError(f"{g['gsm']} GSM not offered for {cat['id']}")
     weight_look = cat["weight_look"][str(g["gsm"])]
@@ -104,10 +115,8 @@ def compile_spec(spec: dict) -> Compiled:
             warn.append(f"catalogue {cat['id']}: {key} missing")
     for note in cat.get("_confirm", []):
         warn.append(f"catalogue {cat['id']}: unconfirmed {note}")
-    hex_ = None if is_missing(colour.get("hex")) else colour["hex"]
-    if hex_ is None:
-        warn.append(f"colour {colour['id']}: hex missing, colour QA (delta E) cannot run")
-    colour_text = f"{colour['name']} ({hex_})" if hex_ else colour["name"]
+    hex_ = colour["hex"]
+    colour_text = f"{colour['name']} ({hex_})"
 
     con = cat["construction"]
     construction = [con[k] for k in ("hood", "drawcords", "pockets", "cuffs_hem", "seams") if not is_missing(con.get(k))]
@@ -230,7 +239,7 @@ def compile_spec(spec: dict) -> Compiled:
     if has_logo:
         active.add("logo")
     fill = {"shoulder": shoulder or "unknown", "gsm": g["gsm"], "weight_look": weight_look,
-            "colour_name": colour["name"], "colour_hex": hex_ or "(hex TODO)", "cast": m.get("cast", "")}
+            "colour_name": colour["name"], "colour_hex": hex_, "cast": m.get("cast", "")}
     qa = [i["text"].format(**fill) for i in checklist["items"] if i["when"] in active]
     qa += [f"Shows: {x}" for x in shot.get("must_show", [])]
     qa += [f"Free of: {x}" for x in shot.get("avoid", [])]

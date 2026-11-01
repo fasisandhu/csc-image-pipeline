@@ -1,0 +1,15 @@
+{
+  "_note": "Showcase palette for sample images. Examples only: customers choose any colour. A spec may also give a custom colour as {\"name\": ..., \"hex\": ...}.",
+  "colours": {
+    "black":        {"name": "Black",        "hex": "#1C1C1E"},
+    "washed-black": {"name": "Washed Black", "hex": "#2F2F31"},
+    "heather-grey": {"name": "Heather Grey", "hex": "#9A9A9C"},
+    "cream":        {"name": "Cream",        "hex": "#EDE6D6"},
+    "sand":         {"name": "Sand",         "hex": "#C8B39A"},
+    "olive":        {"name": "Olive",        "hex": "#5B5B3C"},
+    "forest-green": {"name": "Forest Green", "hex": "#2F4A3A"},
+    "navy":         {"name": "Navy",         "hex": "#1F2A44"},
+    "burgundy":     {"name": "Burgundy",     "hex": "#5A1F2B"},
+    "chocolate":    {"name": "Chocolate",    "hex": "#4A3328"}
+  }
+}

@@ -1,8 +1,7 @@
 {
   "id": "pullover-oversized",
   "_confirm": [
-    "fit wording",
-    "colour offered: washed-black"
+    "fit wording"
   ],
   "style_name": "Oversized Pullover Hoodie",
   "fit": "Oversized boxy fit, dropped shoulder, wide body, slightly cropped length.",
@@ -28,20 +27,7 @@
     "450": "stands away from the body, with thick rib and a hood that keeps its shape"
   },
   "fabric": "TODO: exact blend, e.g. 80/20 cotton-poly brushed-back fleece",
-  "colours": [
-    {
-      "id": "washed-black",
-      "name": "Washed Black",
-      "hex": "TODO",
-      "pantone": "TODO"
-    },
-    {
-      "id": "TODO",
-      "name": "TODO",
-      "hex": "TODO",
-      "pantone": "TODO"
-    }
-  ],
+  "colours": "any: customer's choice. Sample images use brand/palette.json or a custom colour in the spec.",
   "construction": {
     "hood": "double-layer hood with centre seam",
     "drawcords": "flat drawcords with metal aglets, through metal eyelets",

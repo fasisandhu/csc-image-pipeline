@@ -11,6 +11,7 @@ Cut Sew Club (https://cutsewclub.vercel.app/) is a B2B apparel sourcing studio i
 - Minimum order: 30 pieces.
 - Decoration: flat embroidery, 3D puff embroidery, screen print, woven neck labels, hang tags.
 - Buyers: small US streetwear brands, merch companies, individuals, and businesses ordering staff or event hoodies.
+- Custom-first: the customer chooses colour, design and decoration. There is no fixed colour range or theme. Website images are samples of what's possible (sample colours, sample designs, each technique and placement), not a stock catalogue. Only the garment itself is fixed: fits, construction, GSM, placements and max sizes.
 - Positioning: verifiable proof and accountability. The site promises real photos and video of every order.
 
 I'm an AI engineer and an experienced Claude Code user, comfortable with Python and APIs. Skip basics; be concise.
@@ -60,6 +61,9 @@ csc-image-pipeline/
 ├── brand/
 │   ├── brand.json        # name, colours (hex + Pantone), fonts, style_block, captions
 │   ├── cast.json         # the four AI models (below)
+│   ├── palette.json      # showcase colours for samples (examples, not limits)
+│   ├── qa_checklist.json # garment QA checklist as data
+│   ├── designs/          # sample designs with invented brand names (step 5)
 │   └── logo/             # placeholder logo until the real one is final
 ├── catalogue/
 │   ├── pullover-classic.json
@@ -92,10 +96,14 @@ csc-image-pipeline/
 - `style_block`, reused word for word in every prompt of a set: "clean editorial streetwear catalogue, true-to-life colour, soft natural contrast, no film grain"
 - captions: "Concept render. Production photos are shot for every order." and, for on-model shots, "AI model, concept render"
 
+`brand/palette.json`: about 10 popular streetwear hoodie colours with hex codes, used for sample images. Examples only. A spec may pick a palette id or give any custom colour as `{"name", "hex"}`; colour QA checks the render against whatever the spec asked for.
+
+Sample designs (`brand/designs/`): artwork shown on sample hoodies so customers can picture their own. Always invented brand names, never real brands. Start with hand-made SVGs (exact, free, used to test the logo and composite step), then add Nano Banana Pro designs for variety. Text in a generated design goes through the same logo verification.
+
 Each `catalogue/*.json` holds:
 - style name, fit description and key measurements
 - GSM options
-- colour list with names and hex values
+- no colour list (colour is the customer's choice)
 - construction: hood (double-layer, centre seam), flat drawcords with metal aglets, kangaroo or split pockets, 2x2 rib cuffs and hem, coverstitched seams, zip type for the zip style
 - how weight looks:
   - 320 GSM drapes softly
@@ -120,7 +128,7 @@ Each `catalogue/*.json` holds:
   "set": {"set_id": "", "style_block": "", "reference_images": [], "aspect_ratio": "4:5", "resolution": "2K"},
   "shot": {
     "shot_id": "", "purpose": "", "tier": "draft | standard | premium",
-    "garment": {"catalogue": "pullover-oversized", "colour": "washed-black", "gsm": 450},
+    "garment": {"catalogue": "pullover-oversized", "colour": "washed-black | {\"name\": \"\", \"hex\": \"#RRGGBB\"}", "gsm": 450},
     "decoration": [{"type": "3D puff embroidery", "artwork": "brand/logo/placeholder.svg", "placement": "centre chest", "size_cm": 22, "render_mode": "generate_and_verify | placeholder_then_composite"}],
     "labels": {"neck": "", "hang_tag": ""},
     "camera": {"angle": "", "lens": "", "framing": ""},

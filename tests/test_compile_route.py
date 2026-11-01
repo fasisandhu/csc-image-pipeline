@@ -98,3 +98,21 @@ def test_plan_counts_pending_and_flags_approval():
     assert summary["total_usd"] > ledger.RUN_APPROVAL_USD and summary["needs_approval"]
     _, small = router.plan([c], drafts_per_shot=3)
     assert not small["needs_approval"] and small["total_neurons"] > 300
+
+
+def test_palette_colour_brings_hex():
+    c = compile_file(ANCHOR)
+    assert "Washed Black (#2F2F31)" in c.prompts["paragraph"]
+    assert any("#2F2F31" in q for q in c.qa)
+
+
+def test_custom_colour_allowed_and_validated():
+    spec = json.loads(open(ANCHOR, encoding="utf-8").read())
+    spec["shot"]["garment"]["colour"] = {"name": "Customer Lilac", "hex": "#B9A6D3"}
+    assert "Customer Lilac (#B9A6D3)" in compile_spec(spec).prompts["paragraph"]
+    spec["shot"]["garment"]["colour"] = {"name": "Lilac", "hex": "lilac"}
+    with pytest.raises(CompileError, match="#RRGGBB"):
+        compile_spec(spec)
+    spec["shot"]["garment"]["colour"] = "teal"
+    with pytest.raises(CompileError, match="palette"):
+        compile_spec(spec)

@@ -2,16 +2,16 @@
 
 Tier **standard**, 2K, 4:5
 
-## Nano Banana prompt (208 words)
+## Nano Banana prompt (200 words)
 
-Front-view anchor packshot of a single hoodie for the product page, shown as a ghost-mannequin catalogue shot with the body shape filled out and no visible mannequin. The garment is an oversized pullover hoodie in 450 GSM cotton-rich fleece: oversized boxy fit, dropped shoulder, wide body, slightly cropped length. The 450 GSM fabric stands away from the body, with thick rib and a hood that keeps its shape. The colour is Washed Black (#2F2F31). Construction: double-layer hood with centre seam; flat drawcords with metal aglets, through metal eyelets; kangaroo pocket, openings symmetrical, attached at the hem; 2x2 rib cuffs and hem, distinct from the body fabric; and coverstitched seams. The garment is plain and unbranded. Clearly visible: both drawcords with metal aglets, the full kangaroo pocket, and rib cuffs and hem. The camera is straight on at chest height, with a 50mm lens, whole garment centred with even margins on all sides. Soft, even studio light from a large overhead softbox with gentle front fill, showing the fleece texture. Seamless light grey studio background with a soft natural shadow below the hem. Style: clean editorial streetwear catalogue, true-to-life colour, soft natural contrast, no film grain. Image 1 is a rough layout sketch; match its framing and pose only.
+Front-view anchor packshot of a single hoodie for the product page, shown as a ghost-mannequin catalogue shot with the body shape filled out and no visible mannequin. The garment is an oversized pullover hoodie in 450 GSM cotton-rich fleece: oversized boxy fit, dropped shoulder, wide body, slightly cropped length. The 450 GSM fabric stands away from the body, with thick rib and a hood that keeps its shape. The colour is Washed Black (#2F2F31). Construction: double-layer hood with centre seam; flat woven drawcords, about 1 cm wide, with metal aglets, through metal eyelets; kangaroo pocket, openings symmetrical, attached at the hem; 2x2 rib cuffs and hem, distinct from the body fabric; and coverstitched seams. The garment is plain and unbranded. Clearly visible: both drawcords with metal aglets, the full kangaroo pocket, and rib cuffs and hem. The camera is straight on at chest height, with a 50mm lens, whole garment centred with even margins on all sides. Soft, even studio light from a large overhead softbox with gentle front fill, showing the fleece texture. Seamless light grey studio background with a soft natural shadow below the hem. Style: clean editorial streetwear catalogue, true-to-life colour, soft natural contrast, no film grain.
 
 ## FLUX.2 klein prompt
 
 ```json
 {
   "subject": "Front-view anchor packshot of a single hoodie for the product page, shown as a ghost-mannequin catalogue shot with the body shape filled out and no visible mannequin",
-  "garment": "oversized pullover hoodie, 450 GSM cotton-rich fleece, oversized boxy fit, dropped shoulder, wide body, slightly cropped length; fabric stands away from the body, with thick rib and a hood that keeps its shape; colour Washed Black (#2F2F31); double-layer hood with centre seam; flat drawcords with metal aglets, through metal eyelets; kangaroo pocket, openings symmetrical, attached at the hem; 2x2 rib cuffs and hem, distinct from the body fabric; coverstitched seams",
+  "garment": "oversized pullover hoodie, 450 GSM cotton-rich fleece, oversized boxy fit, dropped shoulder, wide body, slightly cropped length; fabric stands away from the body, with thick rib and a hood that keeps its shape; colour Washed Black (#2F2F31); double-layer hood with centre seam; flat woven drawcords, about 1 cm wide, with metal aglets, through metal eyelets; kangaroo pocket, openings symmetrical, attached at the hem; 2x2 rib cuffs and hem, distinct from the body fabric; coverstitched seams",
   "decoration": "The garment is plain and unbranded.",
   "scene": "seamless light grey studio background with a soft natural shadow below the hem",
   "camera": "straight on at chest height, 50mm, whole garment centred with even margins on all sides",
@@ -22,7 +22,7 @@ Front-view anchor packshot of a single hoodie for the product page, shown as a g
 
 ## References
 
-1. `out/drafts/20261101T181113_ovs-wblack-450-anchor-front_draft.jpg`: a rough layout sketch; match its framing and pose only
+(none)
 
 ## QA checklist
 

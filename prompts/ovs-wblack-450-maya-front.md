@@ -2,16 +2,16 @@
 
 Tier **standard**, 2K, 4:5
 
-## Nano Banana prompt (223 words)
+## Nano Banana prompt (228 words)
 
-Three-quarter-length on-model shot for the product page, showing the oversized fit and heavyweight drape. The garment is an oversized pullover hoodie in 450 GSM cotton-rich fleece: oversized boxy fit, dropped shoulder, wide body, slightly cropped length. The 450 GSM fabric stands away from the body, with thick rib and a hood that keeps its shape. The colour is Washed Black (#2F2F31). Construction: double-layer hood with centre seam; flat drawcords with metal aglets, through metal eyelets; kangaroo pocket, openings symmetrical, attached at the hem; 2x2 rib cuffs and hem, distinct from the body fabric; and coverstitched seams. The garment is plain and unbranded. Worn by a model (Black woman, early 20s, natural hair in a low puff, medium build, 168 cm), standing relaxed with weight on one leg, one hand in the kangaroo pocket, looking just off camera. The fleece shows natural creases at the elbows and around the pocket. Clearly visible: dropped shoulder seams, and both drawcords with metal aglets. The camera is at chest height, slightly to the model's right, with an 85mm lens, head to mid-thigh with the model centred. Soft window-style key light from camera left with gentle fill. Plain warm off-white studio wall. Style: clean editorial streetwear catalogue, true-to-life colour, soft natural contrast, no film grain. Image 1 is the exact garment; match colour, rib width and hood shape.
+Three-quarter-length on-model shot for the product page, showing the oversized fit and heavyweight drape. The garment is an oversized pullover hoodie in 450 GSM cotton-rich fleece: oversized boxy fit, dropped shoulder, wide body, slightly cropped length. The 450 GSM fabric stands away from the body, with thick rib and a hood that keeps its shape. The colour is Washed Black (#2F2F31). Construction: double-layer hood with centre seam; flat woven drawcords, about 1 cm wide, with metal aglets, through metal eyelets; kangaroo pocket, openings symmetrical, attached at the hem; 2x2 rib cuffs and hem, distinct from the body fabric; and coverstitched seams. The garment is plain and unbranded. Worn by a model (Black woman, early 20s, natural hair in a low puff, medium build, 168 cm), standing relaxed with weight on one leg, one hand in the kangaroo pocket, looking just off camera. The fleece shows natural creases at the elbows and around the pocket. Clearly visible: dropped shoulder seams, and both drawcords with metal aglets. The camera is at chest height, slightly to the model's right, with an 85mm lens, head to mid-thigh with the model centred. Soft window-style key light from camera left with gentle fill. Plain warm off-white studio wall. Style: clean editorial streetwear catalogue, true-to-life colour, soft natural contrast, no film grain. Image 1 is the exact garment; match colour, rib width and hood shape.
 
 ## FLUX.2 klein prompt
 
 ```json
 {
   "subject": "Three-quarter-length on-model shot for the product page, showing the oversized fit and heavyweight drape; worn by Black woman, early 20s, natural hair in a low puff, medium build, 168 cm, standing relaxed with weight on one leg, one hand in the kangaroo pocket, looking just off camera",
-  "garment": "oversized pullover hoodie, 450 GSM cotton-rich fleece, oversized boxy fit, dropped shoulder, wide body, slightly cropped length; fabric stands away from the body, with thick rib and a hood that keeps its shape; colour Washed Black (#2F2F31); double-layer hood with centre seam; flat drawcords with metal aglets, through metal eyelets; kangaroo pocket, openings symmetrical, attached at the hem; 2x2 rib cuffs and hem, distinct from the body fabric; coverstitched seams",
+  "garment": "oversized pullover hoodie, 450 GSM cotton-rich fleece, oversized boxy fit, dropped shoulder, wide body, slightly cropped length; fabric stands away from the body, with thick rib and a hood that keeps its shape; colour Washed Black (#2F2F31); double-layer hood with centre seam; flat woven drawcords, about 1 cm wide, with metal aglets, through metal eyelets; kangaroo pocket, openings symmetrical, attached at the hem; 2x2 rib cuffs and hem, distinct from the body fabric; coverstitched seams",
   "decoration": "The garment is plain and unbranded.",
   "scene": "plain warm off-white studio wall",
   "camera": "at chest height, slightly to the model's right, 85mm, head to mid-thigh with the model centred",
@@ -54,4 +54,4 @@ Three-quarter-length on-model shot for the product page, showing the oversized f
 
 - catalogue pullover-oversized: unconfirmed fit wording
 - cast Maya: no approved reference sheet yet, face consistency relies on the description
-- paragraph prompt is 223 words, outside 120-220
+- paragraph prompt is 228 words, outside 120-220

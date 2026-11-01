@@ -33,8 +33,13 @@ REF_IMAGE_TOKENS = 560  # approximate input tokens per reference image
 PROMPT_TOKENS_EST = 400  # generous allowance for a 220-word prompt plus thinking overhead
 
 
+MAX_REFS = 14
+
+
 class GeminiProvider:
     name = "gemini"
+    prompt_format = "paragraph"
+    max_refs = MAX_REFS
 
     def __init__(self, tier: str = "standard"):
         if tier not in MODELS:

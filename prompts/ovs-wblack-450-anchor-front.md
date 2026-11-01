@@ -1,0 +1,56 @@
+# ovs-wblack-450-anchor-front
+
+Tier **standard**, 2K, 4:5
+
+## Nano Banana prompt (194 words)
+
+Front-view anchor packshot of a single hoodie for the product page, shown as a ghost-mannequin catalogue shot with the body shape filled out and no visible mannequin. The garment is an oversized pullover hoodie in 450 GSM cotton-rich fleece: oversized boxy fit, dropped shoulder, wide body, slightly cropped length. The 450 GSM fabric stands away from the body, with thick rib and a hood that keeps its shape. The colour is Washed Black. Construction: double-layer hood with centre seam; flat drawcords with metal aglets, through metal eyelets; kangaroo pocket, openings symmetrical, attached at the hem; 2x2 rib cuffs and hem, distinct from the body fabric; and coverstitched seams. The garment is plain and unbranded. Clearly visible: both drawcords with metal aglets, the full kangaroo pocket, and rib cuffs and hem. The camera is straight on at chest height, with a 50mm lens, whole garment centred with even margins on all sides. Soft, even studio light from a large overhead softbox with gentle front fill, showing the fleece texture. Seamless light grey studio background with a soft natural shadow below the hem. Style: clean editorial streetwear catalogue, true-to-life colour, soft natural contrast, no film grain.
+
+## FLUX.2 klein prompt
+
+```json
+{
+  "subject": "Front-view anchor packshot of a single hoodie for the product page, shown as a ghost-mannequin catalogue shot with the body shape filled out and no visible mannequin",
+  "garment": "oversized pullover hoodie, 450 GSM cotton-rich fleece, oversized boxy fit, dropped shoulder, wide body, slightly cropped length; fabric stands away from the body, with thick rib and a hood that keeps its shape; colour Washed Black; double-layer hood with centre seam; flat drawcords with metal aglets, through metal eyelets; kangaroo pocket, openings symmetrical, attached at the hem; 2x2 rib cuffs and hem, distinct from the body fabric; coverstitched seams",
+  "decoration": "The garment is plain and unbranded.",
+  "scene": "seamless light grey studio background with a soft natural shadow below the hem",
+  "camera": "straight on at chest height, 50mm, whole garment centred with even margins on all sides",
+  "lighting": "soft, even studio light from a large overhead softbox with gentle front fill, showing the fleece texture",
+  "style": "clean editorial streetwear catalogue, true-to-life colour, soft natural contrast, no film grain"
+}
+```
+
+## References
+
+(none)
+
+## QA checklist
+
+- [ ] Two drawcords, equal length, metal aglets, through eyelets
+- [ ] Rib cuffs and hem consistent width, distinct from the body
+- [ ] Shoulder seam matches the fit (dropped)
+- [ ] Kangaroo pocket openings symmetrical, attached at the hem
+- [ ] Hood double-layer with centre seam
+- [ ] Drape matches 450 GSM: stands away from the body, with thick rib and a hood that keeps its shape
+- [ ] Colour matches Washed Black (hex TODO) (delta E <= 5)
+- [ ] No unintended text or logos
+- [ ] Shows: both drawcords with metal aglets
+- [ ] Shows: the full kangaroo pocket
+- [ ] Shows: rib cuffs and hem
+- [ ] Free of: visible mannequin or hanger
+- [ ] Free of: text or logos
+
+## Negatives
+
+- visible mannequin or hanger
+- text or logos
+- unintended text, letters or logos
+- extra, missing or uneven drawcords
+- extra or fused fingers
+- thin T-shirt-like fabric on heavy GSM
+
+## Warnings
+
+- catalogue pullover-oversized: unconfirmed fit wording
+- catalogue pullover-oversized: unconfirmed colour offered: washed-black
+- colour washed-black: hex missing, colour QA (delta E) cannot run

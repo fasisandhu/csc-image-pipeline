@@ -1,0 +1,24 @@
+{
+  "_note": "Garment QA checklist from CLAUDE.md. 'when' filters items per shot: always, pullover, zip, model, decoration, logo.",
+  "items": [
+    {"id": "drawcords", "when": "always", "text": "Two drawcords, equal length, metal aglets, through eyelets"},
+    {"id": "zip", "when": "zip", "text": "Zip teeth even and continuous, one pull, runs to the neck"},
+    {"id": "rib", "when": "always", "text": "Rib cuffs and hem consistent width, distinct from the body"},
+    {"id": "shoulder", "when": "always", "text": "Shoulder seam matches the fit ({shoulder})"},
+    {"id": "pocket", "when": "pullover", "text": "Kangaroo pocket openings symmetrical, attached at the hem"},
+    {"id": "split_pockets", "when": "zip", "text": "Split pocket openings symmetrical, attached at the hem"},
+    {"id": "hood", "when": "always", "text": "Hood double-layer with centre seam"},
+    {"id": "drape", "when": "always", "text": "Drape matches {gsm} GSM: {weight_look}"},
+    {"id": "colour", "when": "always", "text": "Colour matches {colour_name} {colour_hex} (delta E <= 5)"},
+    {"id": "hands", "when": "model", "text": "Hands correct (five fingers, not fused into pockets)"},
+    {"id": "face", "when": "model", "text": "Face matches the cast sheet for {cast}"},
+    {"id": "no_text", "when": "always", "text": "No unintended text or logos"},
+    {"id": "logo", "when": "logo", "text": "Intended logo passes verification (OCR, outline, colour)"}
+  ],
+  "negatives": [
+    "unintended text, letters or logos",
+    "extra, missing or uneven drawcords",
+    "extra or fused fingers",
+    "thin T-shirt-like fabric on heavy GSM"
+  ]
+}

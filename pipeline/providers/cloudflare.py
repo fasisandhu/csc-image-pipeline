@@ -54,6 +54,8 @@ def _shrink_ref(path: Path) -> bytes:
 class CloudflareProvider:
     name = "cloudflare"
     model = MODEL
+    prompt_format = "flux_json"
+    max_refs = MAX_REFS
 
     def __init__(self, timeout: int = 120):
         self.account_id = os.environ.get("CLOUDFLARE_ACCOUNT_ID")

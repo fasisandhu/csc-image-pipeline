@@ -1,0 +1,23 @@
+{
+  "set": {
+    "set_id": "test-oversized-washed-black",
+    "style_block": "",
+    "reference_images": [],
+    "aspect_ratio": "4:5",
+    "resolution": "2K"
+  },
+  "shot": {
+    "shot_id": "ovs-wblack-450-anchor-front",
+    "purpose": "Front-view anchor packshot of a single hoodie for the product page, shown as a ghost-mannequin catalogue shot with the body shape filled out and no visible mannequin",
+    "tier": "standard",
+    "garment": {"catalogue": "pullover-oversized", "colour": "washed-black", "gsm": 450},
+    "decoration": [],
+    "labels": {"neck": "", "hang_tag": ""},
+    "camera": {"angle": "straight on at chest height", "lens": "50mm", "framing": "whole garment centred with even margins on all sides"},
+    "lighting": "soft, even studio light from a large overhead softbox with gentle front fill, showing the fleece texture",
+    "background": "seamless light grey studio background with a soft natural shadow below the hem",
+    "model": {"present": false, "cast": "", "pose": ""},
+    "must_show": ["both drawcords with metal aglets", "the full kangaroo pocket", "rib cuffs and hem"],
+    "avoid": ["visible mannequin or hanger", "text or logos"]
+  }
+}

@@ -1,0 +1,25 @@
+{
+  "set": {
+    "set_id": "test-oversized-washed-black",
+    "style_block": "",
+    "reference_images": [
+      {"path": "refs/anchors/pullover-oversized_washed-black_450_front.png", "role": "the exact garment; match colour, rib width and hood shape"}
+    ],
+    "aspect_ratio": "4:5",
+    "resolution": "2K"
+  },
+  "shot": {
+    "shot_id": "ovs-wblack-450-maya-front",
+    "purpose": "Three-quarter-length on-model shot for the product page, showing the oversized fit and heavyweight drape",
+    "tier": "standard",
+    "garment": {"catalogue": "pullover-oversized", "colour": "washed-black", "gsm": 450},
+    "decoration": [],
+    "labels": {"neck": "", "hang_tag": ""},
+    "camera": {"angle": "at chest height, slightly to the model's right", "lens": "85mm", "framing": "head to mid-thigh with the model centred"},
+    "lighting": "soft window-style key light from camera left with gentle fill",
+    "background": "plain warm off-white studio wall",
+    "model": {"present": true, "cast": "Maya", "pose": "standing relaxed with weight on one leg, one hand in the kangaroo pocket, looking just off camera"},
+    "must_show": ["dropped shoulder seams", "both drawcords with metal aglets"],
+    "avoid": ["text or logos", "tucked-in hem"]
+  }
+}

@@ -27,6 +27,8 @@ class GenerateResult:
 class Provider(Protocol):
     name: str
     model: str
+    prompt_format: str  # which compiled prompt this adapter takes: "paragraph" or "flux_json"
+    max_refs: int
 
     def estimate(self, refs: Sequence[Path], size: str, aspect: str) -> dict:
         """Pre-call cost estimate: {"cost_usd": float, ...native units}."""

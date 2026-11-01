@@ -1,0 +1,25 @@
+{
+  "set": {
+    "set_id": "test-oversized-washed-black",
+    "style_block": "",
+    "reference_images": [
+      {"path": "refs/anchors/pullover-oversized_washed-black_450_front.png", "role": "the exact garment; match colour, rib width, drawcords and hood shape"}
+    ],
+    "aspect_ratio": "4:5",
+    "resolution": "2K"
+  },
+  "shot": {
+    "shot_id": "ovs-wblack-450-oakmere-puff-front",
+    "purpose": "Front-view packshot showing a 3D puff embroidered centre-chest logo, as a ghost-mannequin catalogue shot",
+    "tier": "premium",
+    "garment": {"catalogue": "pullover-oversized", "colour": "washed-black", "gsm": 450},
+    "decoration": [{"type": "3D puff embroidery", "artwork": "brand/designs/oakmere-athletic.svg", "placement": "centre chest", "size_cm": 22, "render_mode": "generate_and_verify"}],
+    "labels": {"neck": "", "hang_tag": ""},
+    "camera": {"angle": "straight on at chest height", "lens": "50mm", "framing": "whole garment centred with even margins on all sides"},
+    "lighting": "soft, even studio light from a large overhead softbox with gentle front fill, showing the raised embroidery",
+    "background": "seamless light grey studio background with a soft natural shadow below the hem",
+    "model": {"present": false, "cast": "", "pose": ""},
+    "must_show": ["the raised 3D puff logo", "both drawcords with metal aglets"],
+    "avoid": ["any other text or logos"]
+  }
+}

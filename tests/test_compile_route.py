@@ -40,12 +40,12 @@ def test_on_model_uses_cast_verbatim_and_creases():
     assert desc in c.prompts["paragraph"] and desc in json.loads(c.prompts["flux_json"])["subject"]
     assert "creases at the elbows" in c.prompts["paragraph"]
     assert any("Face matches" in q for q in c.qa) and any("Hands" in q for q in c.qa)
-    assert any("not found" in w for w in c.warnings)  # anchor not approved yet
+    assert c.refs[0]["path"].startswith("refs/anchors/") and "Image 1 is the exact garment" in c.prompts["paragraph"]
 
 
 def test_decoration_over_max_size_rejected():
     spec = json.loads(open(ANCHOR, encoding="utf-8").read())
-    spec["shot"]["decoration"] = [{"type": "3D puff embroidery", "artwork": "brand/logo/placeholder.svg",
+    spec["shot"]["decoration"] = [{"type": "3D puff embroidery", "artwork": "brand/designs/oakmere-athletic.svg",
                                    "placement": "left chest", "size_cm": 12, "render_mode": "generate_and_verify"}]
     with pytest.raises(CompileError, match="exceeds max"):
         compile_spec(spec)
@@ -53,10 +53,10 @@ def test_decoration_over_max_size_rejected():
 
 def test_logo_shot_attaches_artwork_and_numbers_it():
     spec = json.loads(open(ANCHOR, encoding="utf-8").read())
-    spec["shot"]["decoration"] = [{"type": "3D puff embroidery", "artwork": "brand/logo/placeholder.svg",
+    spec["shot"]["decoration"] = [{"type": "3D puff embroidery", "artwork": "brand/designs/oakmere-athletic.svg",
                                    "placement": "centre chest", "size_cm": 22, "render_mode": "generate_and_verify"}]
     c = compile_spec(spec)
-    assert c.refs[0]["path"] == "brand/logo/placeholder.svg"
+    assert c.refs[0]["path"] == "brand/designs/png/oakmere-athletic_ref.png"
     assert "logo shown in Image 1" in c.prompts["paragraph"] and "Image 1 is the logo artwork" in c.prompts["paragraph"]
     assert any("Intended logo" in q for q in c.qa)
 

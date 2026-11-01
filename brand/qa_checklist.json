@@ -1,24 +1,90 @@
 {
   "_note": "Garment QA checklist from CLAUDE.md. 'when' filters items per shot: always, pullover, zip, model, decoration, logo.",
   "items": [
-    {"id": "drawcords", "when": "always", "text": "Two drawcords, equal length, metal aglets, through eyelets"},
-    {"id": "zip", "when": "zip", "text": "Zip teeth even and continuous, one pull, runs to the neck"},
-    {"id": "rib", "when": "always", "text": "Rib cuffs and hem consistent width, distinct from the body"},
-    {"id": "shoulder", "when": "always", "text": "Shoulder seam matches the fit ({shoulder})"},
-    {"id": "pocket", "when": "pullover", "text": "Kangaroo pocket openings symmetrical, attached at the hem"},
-    {"id": "split_pockets", "when": "zip", "text": "Split pocket openings symmetrical, attached at the hem"},
-    {"id": "hood", "when": "always", "text": "Hood double-layer with centre seam"},
-    {"id": "drape", "when": "always", "text": "Drape matches {gsm} GSM: {weight_look}"},
-    {"id": "colour", "when": "always", "text": "Colour matches {colour_name} {colour_hex} (delta E <= 5)"},
-    {"id": "hands", "when": "model", "text": "Hands correct (five fingers, not fused into pockets)"},
-    {"id": "face", "when": "model", "text": "Face matches the cast sheet for {cast}"},
-    {"id": "no_text", "when": "always", "text": "No unintended text or logos"},
-    {"id": "logo", "when": "logo", "text": "Intended logo passes verification (OCR, outline, colour)"}
+    {
+      "id": "drawcords",
+      "when": "always",
+      "text": "Two drawcords, equal length, metal aglets, through eyelets"
+    },
+    {
+      "id": "zip",
+      "when": "zip",
+      "text": "Zip teeth even and continuous, one pull, runs to the neck"
+    },
+    {
+      "id": "rib",
+      "when": "always",
+      "text": "Rib cuffs and hem consistent width, distinct from the body"
+    },
+    {
+      "id": "shoulder",
+      "when": "always",
+      "text": "Shoulder seam matches the fit ({shoulder})"
+    },
+    {
+      "id": "pocket",
+      "when": "pullover",
+      "text": "Kangaroo pocket openings symmetrical, attached at the hem"
+    },
+    {
+      "id": "split_pockets",
+      "when": "zip",
+      "text": "Split pocket openings symmetrical, attached at the hem"
+    },
+    {
+      "id": "hood",
+      "when": "always",
+      "text": "Hood double-layer with centre seam"
+    },
+    {
+      "id": "drape",
+      "when": "always",
+      "text": "Drape matches {gsm} GSM: {weight_look}"
+    },
+    {
+      "id": "colour",
+      "when": "always",
+      "text": "Colour matches {colour_name} {colour_hex} (delta E <= 5)"
+    },
+    {
+      "id": "hands",
+      "when": "model",
+      "text": "Hands correct (five fingers, not fused into pockets)"
+    },
+    {
+      "id": "face",
+      "when": "model",
+      "text": "Face matches the cast sheet for {cast}"
+    },
+    {
+      "id": "no_text",
+      "when": "always",
+      "text": "No unintended text or logos"
+    },
+    {
+      "id": "logo",
+      "when": "logo",
+      "text": "Intended logo passes verification (OCR, outline, colour)"
+    }
   ],
   "negatives": [
     "unintended text, letters or logos",
     "extra, missing or uneven drawcords",
     "extra or fused fingers",
     "thin T-shirt-like fabric on heavy GSM"
-  ]
+  ],
+  "colour": {
+    "_note": "dE2000 of the garment's robust median colour vs the spec hex. Drift is fixed for free by finish colour correction; beyond drift_max the colour is wrong and the shot is regenerated.",
+    "tolerance": 5.0,
+    "drift_max": 15.0,
+    "trim_percent": 10
+  },
+  "logo": {
+    "min_iou": 0.5,
+    "max_ink_de": 12.0,
+    "text_match": "exact after uppercasing and removing spaces and punctuation",
+    "size_low": 0.7,
+    "size_high": 1.25,
+    "_note": "min_iou calibrated on 2026-11-01 from 2 genuine renders (0.57-0.59, drawcords occluding) vs a wrong shape (0.27). Re-calibrate with more samples."
+  }
 }

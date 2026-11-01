@@ -81,3 +81,34 @@ def status() -> str:
         f"(standard ${gemini_month_spend('standard'):.4f}, premium ${gemini_month_spend('premium'):.4f}) | "
         f"Cloudflare today: {cf_day_neurons():.0f} / {CF_DAILY_NEURON_CAP} neurons"
     )
+
+
+def logged_call(base: dict, estimate: dict, fn):
+    """Guard and log a non-image provider call (vision QA). fn() returns an object with cost_usd and units."""
+    from .providers import ProviderError
+
+    check(base["provider"], estimate)
+    try:
+        result = fn()
+    except ProviderError as e:
+        record({**base, "status": "error", "error": str(e), "cost_usd": 0.0})
+        raise
+    record({**base, "status": "ok", "cost_usd": round(result.cost_usd, 5), "units": result.units})
+    return result
+
+
+def find(file: str | Path) -> dict | None:
+    """The generation entry for an image, following later moves (e.g. to out/reject/)."""
+    gen: dict[str, dict] = {}
+    for e in entries():
+        if e.get("status") == "ok" and e.get("file"):
+            gen[Path(e["file"]).name] = e
+        elif e.get("event") == "moved" and Path(e["file"]).name in gen:
+            src = gen[Path(e["file"]).name]
+            gen[Path(e["moved_to"]).name] = {**src, "file": e["moved_to"], "root": src.get("root") or src["file"]}
+    return gen.get(Path(file).name)
+
+
+def events(file: str | Path, kind: str) -> list[dict]:
+    name = Path(file).name
+    return [e for e in entries() if e.get("event") == kind and Path(e.get("file", "")).name == name]

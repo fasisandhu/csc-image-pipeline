@@ -1,0 +1,8 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="-60 0 1120 560" width="1120" height="560">
+  <!-- Sample design: invented brand "Oakmere Athletic". Arched varsity wordmark. -->
+  <defs><path id="arc" d="M 90 400 Q 500 90 910 400"/></defs>
+  <text font-family="Rockwell" font-weight="bold" font-size="146" fill="#EDE6D6" stroke="#5A1F2B" stroke-width="10" paint-order="stroke" letter-spacing="6">
+    <textPath href="#arc" startOffset="50%" text-anchor="middle">OAKMERE</textPath>
+  </text>
+  <text x="500" y="520" font-family="Rockwell" font-weight="bold" font-size="92" fill="#EDE6D6" stroke="#5A1F2B" stroke-width="7" paint-order="stroke" text-anchor="middle" letter-spacing="22">ATHLETIC</text>
+</svg>

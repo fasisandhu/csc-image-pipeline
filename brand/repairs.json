@@ -1,0 +1,76 @@
+{
+  "_note": "QA reason codes. fix: repair (one-change edit), finish (free post-process), regenerate. Rejection notes from the user become new codes or prompt rules.",
+  "codes": {
+    "drawcord_shape": {
+      "fix": "repair",
+      "instruction": "the two drawcords: make them flat woven drawcords about 1 cm wide in the garment colour, equal length, hanging straight, ending in short metal aglets and passing through the metal eyelets"
+    },
+    "drawcord_count": {
+      "fix": "repair",
+      "instruction": "the drawcords: exactly two drawcords of equal length, one through each metal eyelet, each ending in a short metal aglet"
+    },
+    "rib_width": {
+      "fix": "repair",
+      "instruction": "the cuffs and hem: even 2x2 rib of consistent width, clearly distinct from the body fleece"
+    },
+    "shoulder_seam": {
+      "fix": "repair",
+      "instruction": "the shoulder seams: {shoulder} shoulder seams matching the fit"
+    },
+    "pocket_shape": {
+      "fix": "repair",
+      "instruction": "the kangaroo pocket: symmetrical openings on both sides, the pocket attached at the hem"
+    },
+    "hood_shape": {
+      "fix": "repair",
+      "instruction": "the hood: a double-layer hood with a centre seam that holds its shape"
+    },
+    "zip": {
+      "fix": "repair",
+      "instruction": "the zip: one continuous metal zip with even teeth and a single pull, running from hem to neck"
+    },
+    "hands": {
+      "fix": "repair",
+      "instruction": "the hands: natural hands with five fingers each, clearly separate from the pocket"
+    },
+    "unintended_text": {
+      "fix": "repair",
+      "instruction": "remove all text, letters and logos from the garment and background, leaving plain fabric"
+    },
+    "logo_text": {
+      "fix": "repair",
+      "instruction": "the logo at the {placement}: reproduce the artwork in Image 2 exactly, with the text \"{text}\" spelled exactly, same size and position, same {technique} finish"
+    },
+    "logo_shape": {
+      "fix": "repair",
+      "instruction": "the logo at the {placement}: reproduce the shapes and proportions of the artwork in Image 2 exactly, same size and position, same {technique} finish"
+    },
+    "logo_colour": {
+      "fix": "repair",
+      "instruction": "the logo at the {placement}: use exactly the colours of the artwork in Image 2, same size, position and {technique} finish"
+    },
+    "logo_size": {
+      "fix": "repair",
+      "instruction": "the size of the logo at the {placement}: scale it to about {size_cm} cm wide, which is about {torso_share}% of the chest width, keeping its design, position and {technique} finish"
+    },
+    "drape_too_thin": {
+      "fix": "regenerate"
+    },
+    "face": {
+      "fix": "regenerate"
+    },
+    "framing": {
+      "fix": "regenerate"
+    },
+    "colour_wrong": {
+      "fix": "regenerate"
+    },
+    "colour_drift": {
+      "fix": "finish"
+    }
+  },
+  "limits": {
+    "repairs_per_render": 2,
+    "regenerations_per_shot": 2
+  }
+}

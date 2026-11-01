@@ -1,0 +1,11 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 600 600" width="600" height="600">
+  <!-- Sample design: invented club "Halvern Run Club". Round badge for event or staff hoodies. -->
+  <defs><path id="top" d="M 88 330 A 215 215 0 1 1 512 330"/></defs>
+  <circle cx="300" cy="300" r="285" fill="none" stroke="#EDE6D6" stroke-width="18"/>
+  <circle cx="300" cy="300" r="165" fill="none" stroke="#EDE6D6" stroke-width="10"/>
+  <text font-family="Bahnschrift" font-weight="bold" font-size="54" fill="#EDE6D6" letter-spacing="5">
+    <textPath href="#top" startOffset="50%" text-anchor="middle">HALVERN RUN CLUB</textPath>
+  </text>
+  <polyline points="180,360 250,270 300,320 350,240 420,360" fill="none" stroke="#EDE6D6" stroke-width="22" stroke-linejoin="round" stroke-linecap="round"/>
+  <circle cx="350" cy="205" r="18" fill="#EDE6D6"/>
+</svg>

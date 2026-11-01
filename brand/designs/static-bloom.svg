@@ -1,0 +1,5 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="-80 0 1260 420" width="1260" height="420">
+  <!-- Sample design: invented brand "Static Bloom". Script wordmark with a swash. -->
+  <text x="550" y="250" font-family="Segoe Script" font-weight="bold" font-size="150" fill="#E8A0B4" text-anchor="middle">Static Bloom</text>
+  <path d="M 170 320 C 420 380, 700 380, 960 300" fill="none" stroke="#E8A0B4" stroke-width="16" stroke-linecap="round"/>
+</svg>

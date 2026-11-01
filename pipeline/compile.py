@@ -13,6 +13,8 @@ import sys
 from dataclasses import asdict, dataclass, field
 from pathlib import Path
 
+from .designs import design_for, ref_png
+
 ROOT = Path(__file__).resolve().parent.parent
 WORD_RANGE = (120, 220)
 
@@ -166,10 +168,13 @@ def compile_spec(spec: dict, layout_refs: list[str] = ()) -> Compiled:
             raise CompileError(f"{d['placement']} {d['size_cm']} cm exceeds max {place['max_cm']} cm")
         if d.get("render_mode") == "generate_and_verify":
             has_logo = True
-            add_ref(d["artwork"], REF_ROLES["artwork"])
-            n = next((i + 1 for i, r in enumerate(refs) if r["path"] == d["artwork"]), None)
+            ref = ref_png(d["artwork"])
+            add_ref(ref, REF_ROLES["artwork"])
+            n = next((i + 1 for i, r in enumerate(refs) if r["path"] == ref), None)
             source = f"the logo shown in Image {n}" if n else "the logo artwork"
-            deco_text.append(_sentence(f"At the {d['placement']}, about {d['size_cm']} cm wide, is {d['type']} of {source}, reproduced exactly"))
+            text = (design_for(d["artwork"]) or {}).get("text")
+            deco_text.append(_sentence(f"At the {d['placement']}, about {d['size_cm']} cm wide, is {d['type']} of {source}, reproduced exactly"
+                                       + (f", reading \"{text}\" spelled exactly" if text else "")))
         else:
             deco_text.append(_sentence(
                 f"The {d['placement']} is a clean, flat, plain area about {d['size_cm']} cm wide, ready for {d['type']} added later"
@@ -201,6 +206,11 @@ def compile_spec(spec: dict, layout_refs: list[str] = ()) -> Compiled:
     # --- camera, light, style ------------------------------------------------------------
     cam = shot["camera"]
     camera_text = _sentence(f"The camera is {cam['angle']}, with {_a(cam['lens'])} {cam['lens']} lens, {cam['framing']}")
+    rules_path = ROOT / "brand" / "prompt_rules.json"
+    scopes = {"all", cat["id"], "on_model" if m.get("present") else "packshot"}
+    rules = json.loads(rules_path.read_text(encoding="utf-8"))["rules"] if rules_path.exists() else []
+    rule_text = " ".join(_sentence(r["prompt_text"]) for r in rules
+                         if r.get("status") == "active" and r.get("applies_to") in scopes and r.get("prompt_text"))
     style_block = s.get("style_block") or brand["style_block"]
     if style_block != brand["style_block"]:
         warn.append("set style_block differs from brand/brand.json")
@@ -215,6 +225,7 @@ def compile_spec(spec: dict, layout_refs: list[str] = ()) -> Compiled:
         camera_text,
         _sentence(shot["lighting"]),
         _sentence(shot["background"]),
+        rule_text,
         _sentence(f"Style: {style_block}"),
         ref_text,
     ]))

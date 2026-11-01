@@ -3,4 +3,5 @@ requests==2.34.2
 pillow==13.0.0
 opencv-python==5.0.0.93
 python-dotenv==1.2.4
-# pytesseract  # logo OCR, build step 5
+# logo OCR uses Gemini vision (pipeline/providers/vision.py) instead of pytesseract
+resvg_py==0.5.0

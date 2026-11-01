@@ -229,7 +229,7 @@ def compile_spec(spec: dict, layout_refs: list[str] = ()) -> Compiled:
         _sentence(f"Style: {style_block}"),
         ref_text,
     ]))
-    words = len(paragraph.split())
+    words = len(paragraph.split()) - len(ref_text.split())  # reference-role lines do not count toward the limit
     if not WORD_RANGE[0] <= words <= WORD_RANGE[1]:
         warn.append(f"paragraph prompt is {words} words, outside {WORD_RANGE[0]}-{WORD_RANGE[1]}")
 

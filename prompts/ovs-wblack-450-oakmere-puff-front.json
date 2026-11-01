@@ -40,7 +40,7 @@
   ],
   "warnings": [
     "catalogue pullover-oversized: unconfirmed fit wording",
-    "paragraph prompt is 232 words, outside 120-220"
+    "catalogue pullover-oversized: unconfirmed chest_width M = 60 cm: working value approved for logo scale; replace with factory spec"
   ],
-  "word_count": 232
+  "word_count": 204
 }

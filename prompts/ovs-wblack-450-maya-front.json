@@ -39,8 +39,8 @@
   ],
   "warnings": [
     "catalogue pullover-oversized: unconfirmed fit wording",
-    "cast Maya: no approved reference sheet yet, face consistency relies on the description",
-    "paragraph prompt is 228 words, outside 120-220"
+    "catalogue pullover-oversized: unconfirmed chest_width M = 60 cm: working value approved for logo scale; replace with factory spec",
+    "cast Maya: no approved reference sheet yet, face consistency relies on the description"
   ],
-  "word_count": 228
+  "word_count": 215
 }

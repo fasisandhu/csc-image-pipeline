@@ -269,7 +269,7 @@ def composite(image: Path, artwork: str, placement: str, size_cm: float, preset:
     if geo.get("occluders"):  # drawcords and hands stay in front of the decoration
         from .qa import polygon_mask
         occ = polygon_mask((H, W), [o["polygon"] for o in geo["occluders"]])
-        occ = cv2.GaussianBlur(cv2.dilate(occ, np.ones((5, 5), np.uint8)).astype(np.float32) / 255.0, (0, 0), 1.5)
+        occ = cv2.GaussianBlur(occ.astype(np.float32) / 255.0, (0, 0), 1.0)  # outlines already run slightly wide
         alpha = alpha * (1 - occ)
 
     # artwork colour in Lab, carrying the fabric's folds and texture

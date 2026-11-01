@@ -52,3 +52,4 @@ Front-view anchor packshot of a single hoodie for the product page, shown as a g
 ## Warnings
 
 - catalogue pullover-oversized: unconfirmed fit wording
+- catalogue pullover-oversized: unconfirmed chest_width M = 60 cm: working value approved for logo scale; replace with factory spec

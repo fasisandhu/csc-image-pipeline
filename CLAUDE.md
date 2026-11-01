@@ -57,7 +57,7 @@ csc-image-pipeline/
 ├── CLAUDE.md
 ├── .env.example          # key names only, no values
 ├── .gitignore
-├── requirements.txt      # google-genai, requests, pillow, opencv-python, python-dotenv, pytesseract (later)
+├── requirements.txt      # google-genai, requests, pillow, opencv-python, python-dotenv, resvg-py
 ├── brand/
 │   ├── brand.json        # name, colours (hex + Pantone), fonts, style_block, captions
 │   ├── cast.json         # the four AI models (below)
@@ -143,7 +143,7 @@ Facts come from `catalogue/` and `brand/`, never invented. The spec references c
 
 ## Prompt rules
 
-- **Nano Banana 2 and Pro:** flowing natural-language paragraph, 120–220 words. Order:
+- **Nano Banana 2 and Pro:** flowing natural-language paragraph, 120–220 words, not counting the "Image N is…" reference lines. Order:
   1. shot type and purpose
   2. garment: fit, weight described visually, colour name plus hex, construction
   3. decoration with placement and size
@@ -170,7 +170,7 @@ Facts come from `catalogue/` and `brand/`, never invented. The spec references c
 7. **Repair:** one-change region edit prompt, then QA again. Two failed repairs, then regenerate. Two failed regenerations, then flag for me.
 8. **Logo:**
    - generate with the logo attached (Pro);
-   - verify: OCR for text, outline match for shape, colour difference;
+   - verify: text read by Gemini vision (`gemini-3.8-flash`, not pytesseract; must match exactly), outline match for shape (rigid alignment, IoU threshold in `brand/qa_checklist.json`, calibrated on few samples so far), ink colour difference, and size against the placement;
    - repair once;
    - if it still fails, composite: detect the patch, perspective warp, displacement map from the fabric, then a finish preset (print, flat embroidery, 3D puff).
 9. **Finish:**

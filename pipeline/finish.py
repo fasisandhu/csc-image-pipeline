@@ -180,6 +180,18 @@ def export(image: Path, pdf: bool = False) -> Path:
     return out_dir
 
 
+def _wrap(draw: ImageDraw.ImageDraw, text: str, font: ImageFont.ImageFont, width: int) -> list[str]:
+    lines, line = [], ""
+    for word in text.split():
+        trial = f"{line} {word}".strip()
+        if line and draw.textlength(trial, font=font) > width:
+            lines.append(line)
+            line = word
+        else:
+            line = trial
+    return lines + [line] if line else lines
+
+
 def _approval_pdf(im: Image.Image, spec: dict, record: dict, out_dir: Path) -> Path:
     """One-page A4 approval sheet for a client mockup."""
     page = Image.new("RGB", (1240, 1754), "white")  # A4 at 150 dpi
@@ -192,8 +204,10 @@ def _approval_pdf(im: Image.Image, spec: dict, record: dict, out_dir: Path) -> P
              *[(f"{d['type']}, {d['placement']}, {d['size_cm']} cm", _font(22)) for d in shot.get("decoration", [])],
              (record["caption"], _font(20)), ("Approved by: ____________________   Date: __________", _font(22))]
     for text, f in lines:
-        draw.text((80, y), text, fill="black", font=f)
-        y += 48
+        for line in _wrap(draw, text, f, 1240 - 160):
+            draw.text((80, y), line, fill="black", font=f)
+            y += 40
+        y += 8
     path = out_dir / f"{record['shot_id']}-approval.pdf"
     page.save(path, "PDF", resolution=150)
     return path

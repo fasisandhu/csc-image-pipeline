@@ -1,7 +1,8 @@
 {
   "id": "pullover-oversized",
   "_confirm": [
-    "fit wording"
+    "fit wording",
+    "chest_width M = 60 cm: working value approved for logo scale; replace with factory spec"
   ],
   "style_name": "Oversized Pullover Hoodie",
   "fit": "Oversized boxy fit, dropped shoulder, wide body, slightly cropped length.",
@@ -10,7 +11,7 @@
   "measurements_cm": {
     "_note": "Sample size used for renders. Add other sizes if needed.",
     "M": {
-      "chest_width": "TODO",
+      "chest_width": 60,
       "body_length": "TODO",
       "sleeve_length": "TODO",
       "shoulder_drop": "TODO"

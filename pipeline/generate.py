@@ -67,3 +67,61 @@ def run_route(c: Compiled, r: Route) -> tuple[Path, GenerateResult]:
         tag=f"{c.shot_id}_{r.phase}",
         extra={"shot_id": c.shot_id, "phase": r.phase, "requested_tier": r.requested_tier},
     )
+
+
+def main() -> int:
+    """python -m pipeline.generate specs/<shot>.json --phase draft --n 3
+    python -m pipeline.generate specs/<shot>.json --phase final [--layout out/drafts/<picked>.jpg]"""
+    import argparse
+
+    from dotenv import load_dotenv
+
+    from .compile import compile_file, write
+    from .router import Pending, route
+
+    load_dotenv(ledger.ROOT / ".env")
+    ap = argparse.ArgumentParser()
+    ap.add_argument("spec")
+    ap.add_argument("--phase", choices=["draft", "final"], default="final")
+    ap.add_argument("--n", type=int, default=1)
+    ap.add_argument("--layout", action="append", default=[], help="picked draft to attach as a layout sketch")
+    ap.add_argument("--approved", action="store_true", help="user approved a run above the $1 threshold")
+    args = ap.parse_args()
+
+    c = compile_file(args.spec, args.layout)
+    write(c)
+    for w in c.warnings:
+        print(f"warn  {w}")
+    pending, routes = Pending(), []
+    for _ in range(args.n):
+        r = route(c, args.phase, pending)
+        pending.add(r)
+        routes.append(r)
+    total = sum(r.estimate.get("cost_usd", 0.0) for r in routes if r.action == "run")
+    blocked = [r for r in routes if r.action != "run"]
+    if blocked:
+        print(f"stop  {blocked[0].action}: {blocked[0].reason}")
+        return 2
+    if total > ledger.RUN_APPROVAL_USD and not args.approved:
+        print(f"stop  run estimated at ${total:.2f} needs approval (--approved)")
+        return 2
+
+    failures = 0
+    for r in routes:
+        try:
+            path, res = run_route(c, r)
+        except (ProviderError, ledger.BudgetError) as e:
+            failures += 1
+            print(f"FAIL  {e}")
+            if failures >= 2:
+                print("stop  two failures; not retrying")
+                break
+            continue
+        cost = f"~{res.units.get('neurons', 0):.0f} neurons" if r.phase == "draft" else f"${res.cost_usd:.4f}"
+        print(f"ok    {path.relative_to(ledger.ROOT).as_posix()}  {res.model}  {res.width}x{res.height}  {cost}")
+    print(ledger.status())
+    return 1 if failures else 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

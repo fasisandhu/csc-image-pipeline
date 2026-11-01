@@ -90,7 +90,8 @@ def _ref_role(path: str) -> str:
     return REF_ROLES["layout"]
 
 
-def compile_spec(spec: dict) -> Compiled:
+def compile_spec(spec: dict, layout_refs: list[str] = ()) -> Compiled:
+    """layout_refs: picked drafts attached to a final as layout sketches."""
     brand = load_json("brand/brand.json")
     cast_kit = load_json("brand/cast.json")["cast"]
     checklist = load_json("brand/qa_checklist.json")
@@ -148,6 +149,8 @@ def compile_spec(spec: dict) -> Compiled:
     for r in s.get("reference_images", []):
         path, role = (r["path"], r.get("role")) if isinstance(r, dict) else (r, None)
         add_ref(path, role or _ref_role(path))
+    for path in layout_refs:
+        add_ref(Path(path).as_posix(), REF_ROLES["layout"])
 
     # --- decoration and labels -----------------------------------------------------------
     deco_text, has_logo = [], False
@@ -258,8 +261,8 @@ def compile_spec(spec: dict) -> Compiled:
     )
 
 
-def compile_file(path: str | Path) -> Compiled:
-    return compile_spec(json.loads(Path(path).read_text(encoding="utf-8")))
+def compile_file(path: str | Path, layout_refs: list[str] = ()) -> Compiled:
+    return compile_spec(json.loads(Path(path).read_text(encoding="utf-8")), layout_refs)
 
 
 def write(c: Compiled) -> Path:

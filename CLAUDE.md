@@ -29,8 +29,8 @@ Full research (tools, limits, licences, prompts, workflow): https://claude.ai/ar
 | Role | Provider and model | Cost (Oct 2026) | Use for |
 | --- | --- | --- | --- |
 | Drafts | Cloudflare Workers AI, `@cf/black-forest-labs/flux-2-klein-4b` | Free 10,000 neurons/day (about 80–95 1MP images); resets 00:00 UTC | Colourways, placement, layout, pose and background exploration. Sketches only, never published. |
-| Standard finals | Gemini API, Nano Banana 2 (`gemini-3.1-flash-image`) | About $0.067 per 1K/2K image | Anchor packshots, product shots, simple on-model shots |
-| Premium finals | Gemini API, Nano Banana Pro (`gemini-3-pro-image`) | About $0.134 per 1K/2K image | Hero images, decoration close-ups, anything with text or a logo |
+| Standard finals | Gemini API, Nano Banana 2 (`gemini-3.1-flash-image`) | $0.067 per 1K image, $0.101 per 2K image | Anchor packshots, product shots, simple on-model shots |
+| Premium finals | Gemini API, Nano Banana Pro (`gemini-3-pro-image`) | $0.134 per 1K or 2K image | Hero images, decoration close-ups, anything with text or a logo |
 
 - Confirm the exact Gemini model IDs in AI Studio before first use. They have changed before.
 - Check the Cloudflare model page for FLUX.2 klein's exact input fields before writing the adapter.

@@ -112,3 +112,7 @@ def find(file: str | Path) -> dict | None:
 def events(file: str | Path, kind: str) -> list[dict]:
     name = Path(file).name
     return [e for e in entries() if e.get("event") == kind and Path(e.get("file", "")).name == name]
+
+
+if __name__ == "__main__":  # python -m pipeline.ledger  -> month and day budget status
+    print(status())

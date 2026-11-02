@@ -1,0 +1,14 @@
+{
+  "name": "cut-sew-club",
+  "description": "Cut Sew Club internal plugins.",
+  "owner": {
+    "name": "Cut Sew Club"
+  },
+  "plugins": [
+    {
+      "name": "csc-studio",
+      "source": "./plugins/csc-studio",
+      "description": "Cut Sew Club studio pipelines (image pipeline)."
+    }
+  ]
+}

@@ -75,12 +75,17 @@ csc-image-pipeline/
 ├── specs/                # one JSON shot spec per image
 ├── prompts/              # compiled prompts per shot and provider
 ├── pipeline/
-│   ├── providers/        # cloudflare.py, gemini.py (one adapter each, same interface)
+│   ├── providers/        # cloudflare.py, gemini.py, vision.py (one adapter each)
+│   ├── compile.py        # spec -> prompts, negatives, QA checklist
 │   ├── router.py
 │   ├── generate.py
+│   ├── ledger.py         # cost log, budget caps, approvals (python -m pipeline.ledger for status)
 │   ├── qa.py
+│   ├── repair.py
 │   ├── logo.py
-│   └── finish.py
+│   └── finish.py         # colour, background, contact sheet, approve/reject, export
+├── plugins/csc-studio/   # Claude Code plugin: skills that drive the pipeline CLI
+├── .claude-plugin/marketplace.json  # local marketplace "cut-sew-club" listing csc-studio
 └── out/
     ├── drafts/
     ├── finals/

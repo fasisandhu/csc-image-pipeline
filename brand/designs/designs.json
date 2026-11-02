@@ -1,15 +1,82 @@
 {
-  "_note": "Sample designs for showcase images. Invented names only; never real brands. 'text' is what the design reads, used for logo verification. Colours are for dark garments.",
+  "_note": "Sample designs for showcase images. Invented names only; never real brands. 'text' is what the design reads, used for logo verification. 'for_garments' is the garment tone the colours were drawn for (dark or light); a design used on the other tone needs a matching colourway first.",
   "designs": [
-    {"id": "oakmere-athletic", "brand_name": "Oakmere Athletic", "file": "brand/designs/oakmere-athletic.svg", "text": "OAKMERE ATHLETIC",
-     "colours": ["#EDE6D6", "#5A1F2B"], "suggested": {"placement": "centre chest", "technique": "3D puff embroidery", "size_cm": 22}},
-    {"id": "static-bloom", "brand_name": "Static Bloom", "file": "brand/designs/static-bloom.svg", "text": "Static Bloom",
-     "colours": ["#E8A0B4"], "suggested": {"placement": "centre chest", "technique": "3D puff embroidery", "size_cm": 20}},
-    {"id": "kilnworks-kw", "brand_name": "Kilnworks", "file": "brand/designs/kilnworks-kw.svg", "text": "KW",
-     "colours": ["#C8B39A"], "suggested": {"placement": "left chest", "technique": "flat embroidery", "size_cm": 8}},
-    {"id": "midnight-orchard", "brand_name": "Midnight Orchard", "file": "brand/designs/midnight-orchard.svg", "text": "MIDNIGHT ORCHARD",
-     "colours": ["#EDE6D6", "#C8B39A"], "suggested": {"placement": "full back", "technique": "screen print", "size_cm": 30}},
-    {"id": "halvern-run-club", "brand_name": "Halvern Run Club", "file": "brand/designs/halvern-run-club.svg", "text": "HALVERN RUN CLUB",
-     "colours": ["#EDE6D6"], "suggested": {"placement": "centre chest", "technique": "screen print", "size_cm": 22}}
+    {
+      "id": "oakmere-athletic",
+      "brand_name": "Oakmere Athletic",
+      "file": "brand/designs/oakmere-athletic.svg",
+      "text": "OAKMERE ATHLETIC",
+      "colours": [
+        "#EDE6D6",
+        "#5A1F2B"
+      ],
+      "suggested": {
+        "placement": "centre chest",
+        "technique": "3D puff embroidery",
+        "size_cm": 22
+      },
+      "for_garments": "dark"
+    },
+    {
+      "id": "static-bloom",
+      "brand_name": "Static Bloom",
+      "file": "brand/designs/static-bloom.svg",
+      "text": "Static Bloom",
+      "colours": [
+        "#E8A0B4"
+      ],
+      "suggested": {
+        "placement": "centre chest",
+        "technique": "3D puff embroidery",
+        "size_cm": 20
+      },
+      "for_garments": "dark"
+    },
+    {
+      "id": "kilnworks-kw",
+      "brand_name": "Kilnworks",
+      "file": "brand/designs/kilnworks-kw.svg",
+      "text": "KW",
+      "colours": [
+        "#C8B39A"
+      ],
+      "suggested": {
+        "placement": "left chest",
+        "technique": "flat embroidery",
+        "size_cm": 8
+      },
+      "for_garments": "dark"
+    },
+    {
+      "id": "midnight-orchard",
+      "brand_name": "Midnight Orchard",
+      "file": "brand/designs/midnight-orchard.svg",
+      "text": "MIDNIGHT ORCHARD",
+      "colours": [
+        "#EDE6D6",
+        "#C8B39A"
+      ],
+      "suggested": {
+        "placement": "full back",
+        "technique": "screen print",
+        "size_cm": 30
+      },
+      "for_garments": "dark"
+    },
+    {
+      "id": "halvern-run-club",
+      "brand_name": "Halvern Run Club",
+      "file": "brand/designs/halvern-run-club.svg",
+      "text": "HALVERN RUN CLUB",
+      "colours": [
+        "#EDE6D6"
+      ],
+      "suggested": {
+        "placement": "centre chest",
+        "technique": "screen print",
+        "size_cm": 22
+      },
+      "for_garments": "dark"
+    }
   ]
 }

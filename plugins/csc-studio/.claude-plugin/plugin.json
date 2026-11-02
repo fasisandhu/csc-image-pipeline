@@ -1,0 +1,6 @@
+{
+  "name": "csc-studio",
+  "description": "Cut Sew Club studio: spec, generate, QA, logo-verify, finish and export hoodie images under the brand kit and budget rules. Image pipeline first; ads, social, SEO and leads to follow.",
+  "version": "0.1.0",
+  "author": {"name": "Cut Sew Club"}
+}

@@ -1,0 +1,5 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 400 400" width="400" height="400">
+  <!-- Sample design (light-garment colourway): invented brand "Kilnworks". Left-chest monogram. -->
+  <circle cx="200" cy="200" r="178" fill="none" stroke="#4A3328" stroke-width="22"/>
+  <text x="200" y="262" font-family="Arial" font-weight="900" font-size="170" fill="#4A3328" text-anchor="middle" letter-spacing="-6">KW</text>
+</svg>

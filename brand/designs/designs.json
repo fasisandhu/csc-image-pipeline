@@ -77,6 +77,83 @@
         "size_cm": 22
       },
       "for_garments": "dark"
+    },
+    {
+      "id": "oakmere-athletic-light",
+      "brand_name": "Oakmere Athletic",
+      "file": "brand/designs/oakmere-athletic-light.svg",
+      "text": "OAKMERE ATHLETIC",
+      "colours": [
+        "#5A1F2B",
+        "#1C1C1E"
+      ],
+      "suggested": {
+        "placement": "centre chest",
+        "technique": "3D puff embroidery",
+        "size_cm": 22
+      },
+      "for_garments": "light"
+    },
+    {
+      "id": "static-bloom-light",
+      "brand_name": "Static Bloom",
+      "file": "brand/designs/static-bloom-light.svg",
+      "text": "Static Bloom",
+      "colours": [
+        "#A8324F"
+      ],
+      "suggested": {
+        "placement": "centre chest",
+        "technique": "3D puff embroidery",
+        "size_cm": 20
+      },
+      "for_garments": "light"
+    },
+    {
+      "id": "kilnworks-kw-light",
+      "brand_name": "Kilnworks",
+      "file": "brand/designs/kilnworks-kw-light.svg",
+      "text": "KW",
+      "colours": [
+        "#4A3328"
+      ],
+      "suggested": {
+        "placement": "left chest",
+        "technique": "flat embroidery",
+        "size_cm": 8
+      },
+      "for_garments": "light"
+    },
+    {
+      "id": "midnight-orchard-light",
+      "brand_name": "Midnight Orchard",
+      "file": "brand/designs/midnight-orchard-light.svg",
+      "text": "MIDNIGHT ORCHARD",
+      "colours": [
+        "#1F2A44",
+        "#5B5B3C"
+      ],
+      "suggested": {
+        "placement": "full back",
+        "technique": "screen print",
+        "size_cm": 30
+      },
+      "for_garments": "light"
+    },
+    {
+      "id": "halvern-run-club-light",
+      "brand_name": "Halvern Run Club",
+      "file": "brand/designs/halvern-run-club-light.svg",
+      "text": "HALVERN RUN CLUB",
+      "colours": [
+        "#2F4A3A"
+      ],
+      "suggested": {
+        "placement": "centre chest",
+        "technique": "screen print",
+        "size_cm": 22
+      },
+      "for_garments": "light"
     }
   ]
 }

@@ -29,7 +29,14 @@ class BrainResult:
 
 
 class BrainError(RuntimeError):
-    """A brain call failed or was blocked. The message is safe to log: it holds no credential value."""
+    """A brain call failed or was blocked. The message is safe to log: it holds no credential value.
+
+    `cost_usd` is what the failed call still cost (e.g. an error result after billed turns).
+    """
+
+    def __init__(self, message: str = "", cost_usd: float = 0.0):
+        super().__init__(message)
+        self.cost_usd = cost_usd
 
 
 class Brain(Protocol):

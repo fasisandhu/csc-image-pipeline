@@ -14,7 +14,7 @@ from contextlib import aclosing
 from pathlib import Path
 from typing import Sequence
 
-from claude_agent_sdk import ClaudeAgentOptions, ResultMessage, query
+from claude_agent_sdk import ClaudeAgentOptions, HookMatcher, ResultMessage, query
 
 from pipeline import ledger
 from pipeline.ledger import ROOT
@@ -25,6 +25,9 @@ DEFAULT_MODEL = "claude-sonnet-5-5"
 TIMEOUT_S = 60
 DEFAULT_CAP_USD = 5.0
 CREDENTIALS = ("subscription", "api_key")
+# The SDK starts the CLI with {**os.environ, **options.env}: every call sets all three, unused ones to "".
+COMPETING_CREDENTIALS = ("ANTHROPIC_API_KEY", "ANTHROPIC_AUTH_TOKEN", "CLAUDE_CODE_OAUTH_TOKEN")
+ROUTING_OVERRIDES = ("ANTHROPIC_BASE_URL", "CLAUDE_CODE_USE_BEDROCK", "CLAUDE_CODE_USE_VERTEX")
 _TASK: contextvars.ContextVar[str] = contextvars.ContextVar("brain_task", default="brain")
 _FENCE = re.compile(r"```[A-Za-z]*")
 
@@ -44,6 +47,35 @@ def first_json_object(text: str) -> dict | None:
     return None
 
 
+def _norm(path: Path) -> str:
+    return os.path.normcase(str(path.resolve()))
+
+
+def read_gate(images: Sequence[Path]):
+    """PreToolUse hook for Read: deny every path except the images given to this call (compared resolved).
+
+    allowed_tools=["Read"] approves any Read before a permission callback runs, so this hook is the gate
+    that stops a prompt injected in an image from reading .env, client artwork or Claude's credentials.
+    """
+    allowed = {_norm(Path(p)) for p in images}
+
+    async def gate(input_data: dict, tool_use_id: str | None, context: dict) -> dict:
+        raw = (input_data.get("tool_input") or {}).get("file_path")
+        if isinstance(raw, str) and raw:
+            path = Path(raw)
+            if _norm(path if path.is_absolute() else ROOT / path) in allowed:
+                return {}  # no opinion: allowed_tools approves the Read
+        return {"hookSpecificOutput": {
+            "hookEventName": "PreToolUse", "permissionDecision": "deny",
+            "permissionDecisionReason": "Only the image files attached to this task may be read."}}
+
+    return gate
+
+
+def _cost(result: ResultMessage | None) -> float:
+    return float(getattr(result, "total_cost_usd", None) or 0.0)
+
+
 class ClaudeBrain:
     name = "claude"
 
@@ -60,24 +92,35 @@ class ClaudeBrain:
         return float(os.environ.get(self.prefix + "CLAUDE_CAP_USD") or DEFAULT_CAP_USD)
 
     def _env(self) -> dict:
-        """Per-call credential env. Values are read here and go only to the SDK."""
+        """Per-call credential env: all three competing names, the user's one set and the others "".
+
+        A credential in the server's own environment therefore never stands in for the user's. Routing
+        overrides (base URL, Bedrock, Vertex) would send the call elsewhere, so they stop it. Values are
+        read here and go only to the SDK; messages name variables, never values.
+        """
+        for name in ROUTING_OVERRIDES:
+            if os.environ.get(name):
+                raise BrainError(f"claude: {name} is set in the server environment; unset it to use Claude")
         value = (os.environ.get(self.token_env) or "").strip() if self.token_env else ""
+        env = dict.fromkeys(COMPETING_CREDENTIALS, "")
         if self.credential == "api_key":
             if not value:
                 raise BrainError(f"claude: {self.token_env} is not set")
-            return {"ANTHROPIC_API_KEY": value}
-        if value:
-            return {"CLAUDE_CODE_OAUTH_TOKEN": value}
-        if self.user != "owner":  # the logged-in Claude Code session belongs to whoever runs the server
+            env["ANTHROPIC_API_KEY"] = value
+        elif value:
+            env["CLAUDE_CODE_OAUTH_TOKEN"] = value
+        elif self.user != "owner":  # the logged-in Claude Code session belongs to whoever runs the server
             raise BrainError(f"claude: {self.token_env} is not set; only the owner may use the logged-in session")
-        return {}
+        return env
 
     def _options(self, task: str, prompt: str, env: dict, images: Sequence[Path],
                  schema: dict) -> tuple[str, ClaudeAgentOptions]:
         if images:
-            paths = ", ".join(str(Path(p).resolve()) for p in images)
+            resolved = [Path(p).resolve() for p in images]
+            paths = ", ".join(str(p) for p in resolved)
             prompt = f"{prompt}\n\nRead these image files with the Read tool before answering: {paths}"
-            tools = {"tools": ["Read"], "allowed_tools": ["Read"], "max_turns": 4}
+            gate = HookMatcher(matcher="Read", hooks=[read_gate(resolved)], on_failure="block")
+            tools = {"tools": ["Read"], "allowed_tools": ["Read"], "max_turns": 4, "hooks": {"PreToolUse": [gate]}}
         else:
             tools = {"tools": [], "max_turns": 2}
         system = f"You are the Cut Sew Club studio brain doing the task '{task}'; answer only with the JSON asked for."
@@ -97,18 +140,24 @@ class ClaudeBrain:
 
         async def ask() -> ResultMessage | None:
             result = None
-            async with aclosing(query(prompt=prompt, options=options)) as stream:
-                async for m in stream:
-                    if isinstance(m, ResultMessage):
-                        result = m
+            try:
+                async with aclosing(query(prompt=prompt, options=options)) as stream:
+                    async for m in stream:
+                        if isinstance(m, ResultMessage):
+                            result = m
+            except Exception as e:  # noqa: BLE001 - keep what a failed run was billed (ResultError carries it)
+                cost = _cost(result)
+                if not cost and isinstance(getattr(e, "data", None), dict):
+                    cost = float(e.data.get("total_cost_usd") or 0.0)
+                raise BrainError(f"claude: {type(e).__name__}: {e}", cost_usd=cost) from None
             return result
 
         result = asyncio.run(asyncio.wait_for(ask(), TIMEOUT_S))
         if result is None:
             raise BrainError("claude: no result message")
         if result.is_error:
-            raise BrainError(f"claude: {result.subtype}: {(result.result or '')[:200]}")
-        return result.structured_output, result.result or "", float(result.total_cost_usd or 0.0)
+            raise BrainError(f"claude: {result.subtype}: {(result.result or '')[:200]}", cost_usd=_cost(result))
+        return result.structured_output, result.result or "", _cost(result)
 
     def _costs(self, total: float) -> tuple[float, dict]:
         """(billed cost_usd, extra record fields). Subscription use is not billed; keep its usage equivalent."""
@@ -156,6 +205,7 @@ class ClaudeBrain:
                 msg = f"claude: no answer within {TIMEOUT_S} s"
             elif isinstance(e, BrainError):
                 msg = str(e)
+                total = max(total, e.cost_usd)  # a failed run can still be billed
             else:
                 msg = f"claude: {type(e).__name__}: {e}"
             msg = scrub(msg, secrets)

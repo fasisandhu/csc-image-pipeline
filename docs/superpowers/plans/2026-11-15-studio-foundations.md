@@ -255,7 +255,8 @@ def test_on_model_takes_scene_and_recipe_pose():
 
 **Files:**
 - Create `studio/brain/base.py`, `gemini.py`, `claude.py` and `__init__.py`.
-- Modify `pipeline/ledger.py` (add `claude_month_spend`), `.env.example` (names only) and `requirements.txt` (add `claude-agent-sdk==<spike version>`).
+- Modify `pipeline/ledger.py` (add `claude_month_spend`), `.env.example` (names only) and `requirements.txt` (add `claude-agent-sdk==0.2.182`).
+- Read `spikes/claude_sdk/FINDINGS.md` first: it is the confirmed SDK usage.
 - Test: `tests/test_brain.py`.
 
 **Interfaces:**
@@ -276,7 +277,8 @@ class Brain(Protocol):
 class GeminiBrain: ...                      # credential "gemini"
 class ClaudeBrain:
     def __init__(self, user: str, credential: str, token_env: str | None, model: str = "claude-sonnet-5-5"): ...
-    def _run(self, prompt: str, env: dict, images: Sequence[Path]) -> str: ...   # the only SDK call; tests patch it
+    def _run(self, prompt: str, env: dict, images: Sequence[Path], schema: dict) -> tuple[dict | None, str, float]: ...
+        # the only SDK call; tests patch it. Returns (structured_output, result text, total_cost_usd)
 class FallbackBrain:
     def __init__(self, primary: Brain, fallback: Brain): ...
 def credential_for(user: str) -> tuple[str, str | None]   # ("subscription"|"api_key"|"none", env var name or None)
@@ -295,11 +297,22 @@ def get_brain(user: str, fast: bool = False) -> Brain     # fast=True honours ST
 **Rules:**
 - Every `ask_json` records `{"event": "brain", "user", "task", "provider", "model", "credential", "tier": "brain", "seconds", "cost_usd", "status", "fallback"}`.
 - Gemini records use `provider: "gemini"`, so they count toward the $9 cap. Call `ledger.check("gemini", {"cost_usd": 0.002})` first.
-- `ClaudeBrain`:
-  - builds `env` from the user's token variable;
-  - loads the `csc-studio` plugin and allows only `Read`, and only when images are passed;
-  - parses the first JSON object from the result text, stripping code fences;
-  - raises `BrainError` on SDK errors, a 60 s timeout, unparseable output, or (for API-key users) `claude_month_spend(user) >= cap`.
+- `ClaudeBrain` (confirmed by the spike):
+  - `env` is `{"CLAUDE_CODE_OAUTH_TOKEN": token}` for a subscription token, `{"ANTHROPIC_API_KEY": key}` for an API key, or `{}` for the logged-in session (subscription with a blank token).
+  - `_run` uses `claude_agent_sdk.query` with `ClaudeAgentOptions(model, cwd=ROOT, env=env, setting_sources=[], system_prompt=<one line naming the task>, output_format={"type": "json_schema", "schema": schema})`. It also sets:
+    - text-only calls: `tools=[]` and `max_turns=2`;
+    - calls with images: `tools=["Read"]`, `allowed_tools=["Read"]`, and `max_turns=4`, with the image paths named in the prompt.
+  - No plugin is loaded for these structured tasks.
+  - Data is `structured_output` when present; otherwise the first JSON object parsed from the result text, with code fences stripped.
+  - Cost recording:
+    - subscription calls record `cost_usd: 0` and `usage_equiv_usd: total_cost_usd`;
+    - API-key calls record `cost_usd: total_cost_usd`, which counts toward `claude_month_spend`.
+  - Raises `BrainError` on:
+    - SDK errors;
+    - a 60 s timeout;
+    - no usable JSON;
+    - for API-key users, `claude_month_spend(user) >= cap`.
+  - One `query()` per call. A warm client is not needed, because the slim setup answered in 3.7 s cold.
 - `get_brain` returns `FallbackBrain(ClaudeBrain, GeminiBrain)` unless the user's credential is `none`, in which case it returns `GeminiBrain`.
 
 - [ ] **Step 1: Write failing tests:**
@@ -311,9 +324,10 @@ def get_brain(user: str, fast: bool = False) -> Brain     # fast=True honours ST
     - `"sk-test-SECRET"` appears in no record's JSON.
   - `test_api_key_cap_blocks_before_call`: with a recorded Claude spend of 5.0 for the owner, `ClaudeBrain` raises `BrainError` and `_run` is never called.
   - `test_gemini_brain_records_cost`: with a fake genai client whose `usage_metadata` is 1000 input / 200 output tokens, `cost_usd == round(1000*0.75/1e6 + 200*3.75/1e6, 6)`, and the record has `tier == "brain"`.
-  - `test_claude_json_parsing`: ``'```json\n{"a": 1}\n```'`` gives `{"a": 1}`; `"no json here"` raises `BrainError`.
+  - `test_claude_prefers_structured_output`: `_run` returns `({"a": 1}, "ignored", 0.003)`. Expect `data == {"a": 1}`; a subscription record has `cost_usd == 0` and `usage_equiv_usd == 0.003`; an API-key record has `cost_usd == 0.003`.
+  - `test_claude_json_parsing_fallback`: `_run` returns `(None, '```json\n{"a": 1}\n```', 0.0)`. Expect `{"a": 1}`. With `(None, "no json here", 0.0)`, expect `BrainError`.
 - [ ] **Step 2:** Run `.venv/Scripts/python -m pytest tests/test_brain.py -v`. Expect FAIL (no module).
-- [ ] **Step 3:** Implement using the env mechanism confirmed in Task 0. If S4 failed, `credential_for` treats a set token as `"subscription"` without a token and logs a warning.
+- [ ] **Step 3:** Implement as specified above, following `spikes/claude_sdk/FINDINGS.md`.
 - [ ] **Step 4:** Run `.venv/Scripts/python -m pytest -q`. Expect all tests to pass.
 - [ ] **Step 5: Commit:** `git add studio/brain pipeline/ledger.py .env.example requirements.txt tests/test_brain.py && git commit -m "feat: brain adapter, Claude per-user credential with Gemini fallback"`
 

@@ -1,5 +1,8 @@
 import asyncio
 import json
+import os
+import re
+from pathlib import Path
 from types import SimpleNamespace
 
 import pytest
@@ -22,8 +25,10 @@ ENV_NAMES = ("STUDIO_OWNER_CLAUDE", "STUDIO_OWNER_CLAUDE_OAUTH_TOKEN", "STUDIO_O
 
 
 def cred_env(**set_):
-    """The full per-call credential env: every competing name present, blank unless given."""
-    return {name: set_.get(name, "") for name in COMPETING}
+    """The full per-call env: every secret-looking or STUDIO_ name in the process blanked, every competing
+    name present, blank unless given."""
+    blank = {k: "" for k in os.environ if k.upper().startswith("STUDIO_") or re.search("KEY|TOKEN|SECRET", k, re.I)}
+    return {**blank, **{name: set_.get(name, "") for name in COMPETING}}
 
 
 class FakeModels:
@@ -41,6 +46,12 @@ class FakeModels:
 
 def fake_client(**kw):
     return SimpleNamespace(models=FakeModels(**kw))
+
+
+@pytest.fixture(autouse=True)
+def brain_dir(monkeypatch, tmp_path):
+    """Brain working folders go to a temp dir, never the repo's out/."""
+    monkeypatch.setattr(claude_mod, "BRAIN_DIR", tmp_path / "brain")
 
 
 @pytest.fixture
@@ -238,6 +249,25 @@ def test_competing_credential_in_process_env_is_blanked(rows, monkeypatch, name)
     assert calls[-1]["env"] == cred_env(CLAUDE_CODE_OAUTH_TOKEN="tok-PARTNER")
 
 
+def test_other_secrets_never_reach_the_cli(rows, monkeypatch):
+    """Other users' studio tokens, provider keys and anything secret-named are blanked; only this call's
+    credential is set."""
+    others = {"GEMINI_API_KEY": "gem-SECRET", "CLOUDFLARE_API_TOKEN": "cf-SECRET",
+              "STUDIO_OWNER_ANTHROPIC_API_KEY": "owner-SECRET", "STUDIO_OWNER_CLAUDE_CAP_USD": "5",
+              "STUDIO_FAST_TASKS": "claude", "SOME_SERVICE_SECRET": "svc-SECRET", "Db_Password_Key": "db-SECRET"}
+    for k, v in others.items():
+        monkeypatch.setenv(k, v)
+    monkeypatch.setenv("STUDIO_PARTNER_CLAUDE_OAUTH_TOKEN", "tok-PARTNER")
+    calls = patch_run(monkeypatch, ret=({"a": 1}, "", 0.0))
+    ClaudeBrain("partner", "subscription", "STUDIO_PARTNER_CLAUDE_OAUTH_TOKEN").ask_json("t", "x", SCHEMA, user="partner")
+    env = calls[-1]["env"]
+    for k in [*others, "STUDIO_PARTNER_CLAUDE_OAUTH_TOKEN"]:
+        assert env[next(n for n in env if n.upper() == k.upper())] == "", k
+    assert env["CLAUDE_CODE_OAUTH_TOKEN"] == "tok-PARTNER" and env["ANTHROPIC_API_KEY"] == ""
+    assert [v for v in env.values() if v] == ["tok-PARTNER"]
+    assert "PATH" not in {k.upper() for k in env}  # ordinary variables pass through untouched
+
+
 @pytest.mark.parametrize("name", ROUTING)
 def test_routing_override_raises(rows, monkeypatch, name):
     monkeypatch.setenv(name, "https://proxy.example/SECRET-ROUTE")
@@ -258,10 +288,11 @@ def test_read_gate_allows_only_the_call_images(tmp_path):
     img = tmp_path / "a.jpg"
     img.write_bytes(b"x")
     (tmp_path / "sub").mkdir()
-    gate = claude_mod.read_gate([img])
+    gate = claude_mod.read_gate([img], cwd=tmp_path / "sub")
     assert _decide(gate, img) == {}
     assert _decide(gate, tmp_path / "sub" / ".." / "a.jpg") == {}  # resolves to the image
-    for bad in (ROOT / ".env", tmp_path / "sub" / ".." / ".." / "a.jpg", "a.jpg"):
+    assert _decide(gate, "../a.jpg") == {}  # relative: against the brain's cwd, as the CLI reads it
+    for bad in (ROOT / ".env", tmp_path / "sub" / ".." / ".." / "a.jpg", "a.jpg", "../../.env"):
         out = _decide(gate, bad)["hookSpecificOutput"]
         assert out["hookEventName"] == "PreToolUse" and out["permissionDecision"] == "deny"
         assert out["permissionDecisionReason"]
@@ -299,20 +330,28 @@ def test_only_owner_may_use_logged_in_session(rows, monkeypatch):
         b.ask_json("t", "x", SCHEMA, user="owner")
 
 
-def test_claude_options_slim_setup(tmp_path):
+def test_claude_options_slim_setup(tmp_path, monkeypatch):
     b = ClaudeBrain("owner", "subscription", "STUDIO_OWNER_CLAUDE_OAUTH_TOKEN")
     prompt, o = b._options("read_brief", "olive hoodie", {"CLAUDE_CODE_OAUTH_TOKEN": "t"}, [], SCHEMA)
     assert prompt == "olive hoodie"
     assert o.model == "claude-sonnet-5-5" and o.tools == [] and o.max_turns == 2 and o.setting_sources == []
     assert o.output_format == {"type": "json_schema", "schema": SCHEMA} and o.env == {"CLAUDE_CODE_OAUTH_TOKEN": "t"}
     assert "read_brief" in o.system_prompt and "\n" not in o.system_prompt and not o.plugins and not o.hooks
-    img = tmp_path / "a.jpg"
+    # transcripts land in the user's own brain folder, not in the repo's project history
+    assert Path(o.cwd) == tmp_path / "brain" / "owner" and Path(o.cwd).is_dir()
+    assert "CLAUDE_CONFIG_DIR" not in o.env
+    monkeypatch.chdir(tmp_path)
+    img = Path("a.jpg")  # relative to the server's cwd: sent to Claude as an absolute path
+    (tmp_path / "a.jpg").write_bytes(b"x")
     prompt, o = b._options("review", "check", {}, [img], SCHEMA)
     assert o.tools == ["Read"] and o.allowed_tools == ["Read"] and o.max_turns == 4
-    assert str(img.resolve()) in prompt
+    assert str((tmp_path / "a.jpg").resolve()) in prompt and " a.jpg" not in prompt
     (matcher,) = o.hooks["PreToolUse"]  # every Read goes through the image gate
     assert matcher.matcher == "Read" and len(matcher.hooks) == 1 and matcher.on_failure == "block"
     assert _decide(matcher.hooks[0], ROOT / ".env")["hookSpecificOutput"]["permissionDecision"] == "deny"
+    assert _decide(matcher.hooks[0], tmp_path / "a.jpg") == {}
+    assert _decide(matcher.hooks[0], "a.jpg")["hookSpecificOutput"]["permissionDecision"] == "deny"  # not in cwd
+    assert _decide(matcher.hooks[0], "../../a.jpg") == {}  # brain/owner/../../a.jpg is the image
 
 
 def test_brain_repr_has_no_credential_value(monkeypatch):

@@ -1,5 +1,6 @@
 import json
 import os
+import socket
 from contextlib import closing
 from pathlib import Path
 from types import SimpleNamespace
@@ -11,6 +12,7 @@ from fastapi.testclient import TestClient
 from pipeline import generate, ledger, router
 from pipeline.compile import compile_spec, load_json
 from pipeline.specs import build_spec
+from studio import __main__ as main_mod
 from studio import app as app_mod
 from studio import db
 from studio.brain.base import BrainError
@@ -264,3 +266,50 @@ def test_brief_brain_error_is_503(client, monkeypatch):
     monkeypatch.setattr(app_mod, "get_brain", lambda user, fast=False: Broken())
     r = client.post("/api/brief", json={"text": "olive hoodie", "answers": {}})
     assert r.status_code == 503 and r.json() == {"error": "claude: offline | then gemini: offline"}
+
+
+@pytest.fixture
+def startup(monkeypatch):
+    """Record the startup steps; nothing loads .env, touches the database or serves."""
+    calls: list[str] = []
+
+    class FakeWorker:
+        def __init__(self, connect_fn):
+            pass
+
+        def start(self):
+            calls.append("worker")
+
+    def connect(*a, **k):
+        calls.append("db")
+        raise AssertionError("database touched")
+    monkeypatch.setattr(main_mod, "load_dotenv", lambda *a, **k: calls.append("dotenv"))
+    monkeypatch.setattr(db, "connect", connect)
+    monkeypatch.setattr(main_mod, "Worker", FakeWorker)
+    monkeypatch.setattr(main_mod, "serve", lambda sock: calls.append(("serve", sock.getsockname())))
+    return calls
+
+
+def test_second_copy_does_not_start(startup, capsys):
+    with socket.socket() as other:  # a running server already holds the port
+        other.bind(("127.0.0.1", 0))
+        other.listen()
+        assert main_mod.main(other.getsockname()[1]) != 0
+    assert startup == []
+    assert "already running" in capsys.readouterr().err
+
+
+def test_startup_binds_first_then_marks_then_starts_worker_then_serves(startup, monkeypatch):
+    real_bind = main_mod.bind
+
+    def bind(port):
+        sock = real_bind(port)
+        startup.append("bind")
+        return sock
+    monkeypatch.setattr(main_mod, "bind", bind)
+    monkeypatch.setattr(db, "connect", lambda *a, **k: startup.append("db") or SimpleNamespace(close=lambda: None))
+    monkeypatch.setattr(db, "mark_interrupted", lambda conn: startup.append("mark") or 0)
+    assert main_mod.main(0) == 0
+    serve = startup.pop()
+    assert startup == ["bind", "dotenv", "db", "mark", "worker"]
+    assert serve[0] == "serve" and serve[1][0] == "127.0.0.1" and serve[1][1] > 0

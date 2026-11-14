@@ -12,7 +12,7 @@ from typing import Literal
 
 from fastapi import Depends, FastAPI
 from fastapi.middleware.trustedhost import TrustedHostMiddleware
-from fastapi.responses import JSONResponse
+from fastapi.responses import JSONResponse, PlainTextResponse
 from pydantic import BaseModel, Field, StrictBool
 
 from pipeline import ledger
@@ -20,7 +20,7 @@ from pipeline.compile import CompileError, compile_spec, load_json
 from pipeline.providers import ProviderError
 from pipeline.specs import build_spec, find_anchor
 
-from . import db
+from . import db, guide
 from .brain import BrainError, get_brain
 from .identity import current_user
 from .questions import missing, resolve, valid_value
@@ -167,3 +167,10 @@ def get_job(job_id: int):
     with closing(db.connect()) as conn:
         job = db.get_job(conn, job_id)
     return job if job is not None else JSONResponse({"error": f"job {job_id} not found"}, 404)
+
+
+@app.get("/api/guide/{page:path}")
+def get_guide(page: str):
+    if page not in guide.PAGES:  # fixed set: no path from the URL ever reaches the disk
+        return JSONResponse({"error": f"guide page {page!r} not found"}, 404)
+    return PlainTextResponse(guide.render(page), media_type="text/markdown; charset=utf-8")

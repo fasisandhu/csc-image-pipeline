@@ -57,7 +57,7 @@ csc-image-pipeline/
 ├── CLAUDE.md
 ├── .env.example          # key names only, no values
 ├── .gitignore
-├── requirements.txt      # google-genai, requests, pillow, opencv-python, python-dotenv, resvg-py
+├── requirements.txt      # google-genai, requests, pillow, opencv-python, python-dotenv, resvg-py, claude-agent-sdk, fastapi, uvicorn
 ├── brand/
 │   ├── brand.json        # name, colours (hex + Pantone), fonts, style_block, captions
 │   ├── cast.json         # the four AI models (below)
@@ -84,6 +84,16 @@ csc-image-pipeline/
 │   ├── repair.py
 │   ├── logo.py
 │   └── finish.py         # colour, background, contact sheet, approve/reject, export
+├── studio/               # dashboard server: python -m studio (http://127.0.0.1:8765)
+│   ├── questions/        # question sets as data (images.json)
+│   ├── questions.py      # answers -> sections, options, limits, missing
+│   ├── brain/            # Claude per user, Gemini fallback (one JSON call per task)
+│   ├── tasks.py          # brain tasks (read_brief)
+│   ├── app.py            # FastAPI JSON API: questions, brief, preview, jobs
+│   ├── db.py             # SQLite job store (out/studio.db)
+│   ├── worker.py         # runs queued jobs through the pipeline, one at a time, no retries
+│   └── identity.py       # who is asking (localhost = owner)
+├── docs/superpowers/     # design specs and implementation plans
 ├── plugins/csc-studio/   # Claude Code plugin: skills that drive the pipeline CLI
 ├── .claude-plugin/marketplace.json  # local marketplace "cut-sew-club" listing csc-studio
 └── out/

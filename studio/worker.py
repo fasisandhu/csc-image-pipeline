@@ -5,6 +5,7 @@ a failed job stays failed, and a job cut off by a restart is marked interrupted 
 """
 from __future__ import annotations
 
+import json
 import logging
 import sqlite3
 import threading
@@ -19,6 +20,7 @@ from .brain.base import scrub
 
 DRAFTS = 3  # Cloudflare drafts per drafts job
 POLL_S = 1.0
+SPEC_DIR = ROOT / "out" / "specs"  # git-ignored; specs/ is tracked and holds hand-written specs
 log = logging.getLogger("studio.worker")
 
 
@@ -39,6 +41,13 @@ def routes_for(c: Compiled, kind: str) -> list[router.Route]:
 def _rel(path: Path) -> str:
     path = Path(path)
     return (path.relative_to(ROOT) if path.is_absolute() else path).as_posix()
+
+
+def _write_spec(spec: dict) -> None:
+    """out/specs/<shot_id>.json, so `python -m pipeline.qa|logo|finish` can find a dashboard final's spec."""
+    path = SPEC_DIR / f"{spec['shot']['shot_id']}.json"
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(json.dumps(spec, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
 
 
 class Worker:
@@ -72,6 +81,8 @@ class Worker:
     def _run(self, job: dict, result: dict) -> dict:
         """Fill `result` ({"files", "cost_usd"}) call by call, so a failure part-way keeps what was made."""
         c = compile_spec(job["spec"])
+        if job["kind"] == "final":
+            _write_spec(job["spec"])
         routes = routes_for(c, job["kind"])
         blocked = next((r for r in routes if r.action != "run"), None)
         if blocked:

@@ -42,7 +42,12 @@ def load_rgb(path: str | Path) -> np.ndarray:
 
 
 def spec_path(shot_id: str) -> Path:
-    return ROOT / "specs" / f"{shot_id}.json"
+    """specs/<id>.json (hand-written, tracked) else out/specs/<id>.json (written by the studio worker)."""
+    hand, dash = ROOT / "specs" / f"{shot_id}.json", ROOT / "out" / "specs" / f"{shot_id}.json"
+    for p in (hand, dash):
+        if p.exists():
+            return p
+    raise FileNotFoundError(f"no spec for shot {shot_id!r}: looked in {rel(hand)} and {rel(dash)}")
 
 
 def _largest_component(mask: np.ndarray) -> np.ndarray:

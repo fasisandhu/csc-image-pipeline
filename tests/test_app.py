@@ -34,6 +34,7 @@ def isolated(monkeypatch, tmp_path):
     monkeypatch.setattr(ledger, "entries", lambda: log)
     monkeypatch.setattr(ledger, "record", lambda e: log.append(e) or e)
     monkeypatch.setattr(db, "DB_PATH", tmp_path / "studio.db")
+    monkeypatch.setattr(worker_mod, "SPEC_DIR", tmp_path / "specs")
     calls: list[str] = []
 
     def fake_run(c, r):

@@ -18,6 +18,7 @@ QDIR = Path(__file__).parent / "questions"
 HEX_RE = re.compile(r"#[0-9A-Fa-f]{6}")
 NO_MAX = "max size not set yet"
 NEEDS_DESIGN = "a close-up needs a design"
+MAX_COLOUR_NAME = 40  # the name becomes part of file names: keep paths short after a paid call
 
 
 @dataclass
@@ -83,6 +84,7 @@ def _tone(colour) -> str | None:
 
 def _valid_custom_colour(v) -> bool:
     return (isinstance(v, dict) and isinstance(v.get("name"), str) and bool(v["name"].strip())
+            and len(v["name"]) <= MAX_COLOUR_NAME
             and isinstance(v.get("hex"), str) and bool(HEX_RE.fullmatch(v["hex"])))
 
 

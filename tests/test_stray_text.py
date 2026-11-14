@@ -51,3 +51,14 @@ def test_allowed_texts_from_spec():
 def test_scan_is_logged(scan):
     scan(["X"], [])
     assert [r["purpose"] for r in scan.rows if r.get("event") == "vision"] == ["stray_text"]
+
+
+def test_read_all_text_null_and_junk_items(monkeypatch):
+    """JSON null text is no text (not "None", which would be flagged); non-dict items are skipped."""
+    monkeypatch.setattr(vision_mod.GeminiVision, "__init__", lambda self: None)
+    data = [{"text": None, "box_2d": [0, 0, 10, 10]}, "junk", None, {"box_2d": [0, 0, 10, 10]},
+            {"text": "KW", "box_2d": [0, 0, 500, 500]}]
+    monkeypatch.setattr(vision_mod.GeminiVision, "_ask", lambda self, image, prompt: (data, 0.001, {}, (100, 100)))
+    out = vision_mod.GeminiVision().read_all_text(Path("x.jpg")).data
+    assert [i["text"] for i in out] == ["", "", "KW"]
+    assert out[2]["box"] == [0, 0, 50, 50]

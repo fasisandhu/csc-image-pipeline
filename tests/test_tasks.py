@@ -63,3 +63,23 @@ def test_schema_and_prompt_cover_hidden_sections():
     assert set(schema["required"]) == set(schema["properties"])
     assert {"placement", "size_cm", "colour", "colour_word"} <= set(schema["properties"])
     assert "full back" in prompt and "olive hoodie" in prompt
+
+
+def test_validation_repeats_until_nothing_changes(monkeypatch):
+    """A value accepted only because of one that is then dropped goes too (as app.usable does)."""
+    from studio import tasks
+
+    real = tasks.valid_value
+
+    def valid(sid, value, answers):
+        # stand-in for a view-aware size limit: with no placement, a front packshot shows at most 22 cm
+        if sid == "size_cm" and answers.get("recipe") == "packshot-front" and "placement" not in answers:
+            return value <= 22
+        return real(sid, value, answers)
+
+    monkeypatch.setattr(tasks, "valid_value", valid)
+    r = run({"recipe": "packshot-front", "decoration": "design", "placement": "full back", "size_cm": 30})
+    # full back is not visible from the front, so the 30 cm it allowed is dropped with it
+    assert r["answers"] == {"recipe": "packshot-front", "decoration": "design"}
+    r = run({"recipe": "packshot-front", "decoration": "design", "placement": "full back", "size_cm": 20})
+    assert r["answers"] == {"recipe": "packshot-front", "decoration": "design", "size_cm": 20}

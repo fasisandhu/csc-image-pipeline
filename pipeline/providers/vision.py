@@ -136,6 +136,8 @@ class GeminiVision:
         items = data if isinstance(data, list) else [data]
         out = []
         for i in items:
+            if not isinstance(i, dict):  # a stray string or null in the list is not a reading
+                continue
             px = self._to_px(i, size)
-            out.append({"text": str(i.get("text", "")), "box": px.get("box")})
+            out.append({"text": str(i.get("text") or ""), "box": px.get("box")})  # JSON null is no text
         return VisionResult(out, cost, units)

@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import json
+import threading
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -12,6 +13,7 @@ GEMINI_MONTHLY_CAP_USD = 9.00
 GEMINI_SPLIT_USD = {"standard": 4.00, "premium": 6.00}  # soft split, used by the router
 CF_DAILY_NEURON_CAP = 9500
 RUN_APPROVAL_USD = 1.00  # any run estimated above this needs explicit approval
+_LOCK = threading.Lock()  # the studio worker and request threads append at the same time
 
 
 class BudgetError(RuntimeError):
@@ -35,9 +37,11 @@ def entries() -> list[dict]:
 
 def record(entry: dict) -> dict:
     entry = {"ts": now().isoformat(timespec="seconds"), **entry}
-    LOG.parent.mkdir(parents=True, exist_ok=True)
-    with LOG.open("a", encoding="utf-8") as f:
-        f.write(json.dumps(entry, ensure_ascii=False) + "\n")
+    line = json.dumps(entry, ensure_ascii=False) + "\n"
+    with _LOCK:
+        LOG.parent.mkdir(parents=True, exist_ok=True)
+        with LOG.open("a", encoding="utf-8") as f:
+            f.write(line)
     return entry
 
 

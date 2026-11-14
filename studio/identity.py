@@ -6,7 +6,7 @@ from __future__ import annotations
 
 from fastapi import HTTPException, Request
 
-LOCAL_HOSTS = {"127.0.0.1", "::1", "testclient"}  # "testclient": FastAPI's TestClient
+LOCAL_HOSTS = {"127.0.0.1", "::1"}
 
 
 def current_user(request: Request) -> str:

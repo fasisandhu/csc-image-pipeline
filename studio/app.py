@@ -29,8 +29,7 @@ from .worker import routes_for
 
 app = FastAPI(title="CSC Studio", dependencies=[Depends(current_user)])
 # DNS-rebinding guard: a page on another domain that resolves to 127.0.0.1 is refused.
-# "testserver" is the TestClient's host name.
-app.add_middleware(TrustedHostMiddleware, allowed_hosts=["127.0.0.1", "localhost", "testserver"])
+app.add_middleware(TrustedHostMiddleware, allowed_hosts=["127.0.0.1", "localhost"])
 
 
 class BadAnswers(ValueError):

@@ -61,9 +61,12 @@ def read_brief(text: str, brain: Brain, answers: dict | None = None, user: str =
         v = _prep(sid, kind, data[sid])
         if v is not None and valid_value(sid, v, answers):
             cand[sid] = v
-    # pass 2: against the merged answers (dependent values judged with the new catalogue/recipe)
-    merged = {**answers, **cand}
-    accepted = {sid: v for sid, v in cand.items() if valid_value(sid, v, merged)}
+    # pass 2: against the merged answers (dependent values judged with the new catalogue/recipe),
+    # repeated until nothing changes: a value may depend on one just dropped (as app.usable does)
+    accepted = dict(cand)
+    while bad := [sid for sid, v in accepted.items() if not valid_value(sid, v, {**answers, **accepted})]:
+        for sid in bad:
+            del accepted[sid]
     new = {sid: _finish(sid, v) if sid in ("gsm", "size_cm") else v for sid, v in accepted.items()}
     final = {**answers, **new}
 

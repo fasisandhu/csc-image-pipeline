@@ -56,17 +56,21 @@ class Worker:
             job = db.next_queued(conn)
             if job is None or not db.claim(conn, job["id"]):
                 return False
+            result = {"files": [], "cost_usd": 0.0}  # filled as each call returns
             try:
-                result = self._run(job)
+                self._run(job, result)
             except Exception as e:  # the job ends here; nothing re-queues it
-                db.set_status(conn, job["id"], "failed", error=scrub(str(e) or type(e).__name__, limit=1000))
+                # keep what was already made and paid for (e.g. 2 of 3 drafts); None if nothing was
+                db.set_status(conn, job["id"], "failed", error=scrub(str(e) or type(e).__name__, limit=1000),
+                              result=result if result["files"] else None)
             else:
                 db.set_status(conn, job["id"], "done", result=result)
             return True
         finally:
             conn.close()
 
-    def _run(self, job: dict) -> dict:
+    def _run(self, job: dict, result: dict) -> dict:
+        """Fill `result` ({"files", "cost_usd"}) call by call, so a failure part-way keeps what was made."""
         c = compile_spec(job["spec"])
         routes = routes_for(c, job["kind"])
         blocked = next((r for r in routes if r.action != "run"), None)
@@ -76,12 +80,11 @@ class Worker:
         if total > ledger.RUN_APPROVAL_USD and not job["confirmed_by"]:
             raise ledger.BudgetError(f"run estimated at ${total:.2f} needs confirmation")
         runner = self.runner or generate.run_route
-        files, cost = [], 0.0
         for r in routes:
             path, res = runner(c, r)
-            files.append(_rel(path))
-            cost += res.cost_usd
-        return {"files": files, "cost_usd": round(cost, 4)}
+            result["files"].append(_rel(path))
+            result["cost_usd"] = round(result["cost_usd"] + res.cost_usd, 4)
+        return result
 
     def start(self) -> threading.Thread:
         t = threading.Thread(target=self._loop, name="studio-worker", daemon=True)

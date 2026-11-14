@@ -15,6 +15,7 @@ from pipeline.specs import build_spec
 from studio import __main__ as main_mod
 from studio import app as app_mod
 from studio import db
+from studio import worker as worker_mod
 from studio.brain.base import BrainError
 from studio.identity import current_user
 from studio.worker import Worker
@@ -43,9 +44,14 @@ def isolated(monkeypatch, tmp_path):
     return calls
 
 
+def local_client() -> TestClient:
+    """A browser on this PC: Host 127.0.0.1 and a client address of 127.0.0.1 (no test-only allow-list)."""
+    return TestClient(app_mod.app, base_url="http://127.0.0.1", client=("127.0.0.1", 50000))
+
+
 @pytest.fixture
 def client():
-    return TestClient(app_mod.app)
+    return local_client()
 
 
 def spend(monkeypatch, gemini_usd: float = 0.0, neurons: float = 0.0):
@@ -192,6 +198,39 @@ def test_worker_runs_once_and_never_requeues(isolated):
     assert w.run_once() is False
 
 
+def test_failed_drafts_job_keeps_the_drafts_it_made(isolated):
+    made = []
+
+    def third_fails(c, r):
+        if len(made) == 2:
+            raise RuntimeError("provider down")
+        made.append(r.phase)
+        return Path(f"out/drafts/d{len(made)}.png"), SimpleNamespace(cost_usd=0.0)
+    jid = make_job("drafts")
+    assert Worker(db.connect, runner=third_fails).run_once() is True
+    job = get_job(jid)
+    assert job["status"] == "failed" and job["error"] == "provider down"
+    assert job["result"] == {"files": ["out/drafts/d1.png", "out/drafts/d2.png"], "cost_usd": 0.0}
+
+
+def test_worker_rechecks_one_dollar_approval_at_run_time(isolated, monkeypatch):
+    real = worker_mod.routes_for
+
+    def pricey(c, kind):  # the estimate grew past $1 after the job was queued
+        routes = real(c, kind)
+        for r in routes:
+            r.estimate = {**r.estimate, "cost_usd": 1.5}
+        return routes
+    monkeypatch.setattr(worker_mod, "routes_for", pricey)
+    unconfirmed, confirmed = make_job("final"), make_job("final", confirmed_by="owner")
+    w = Worker(db.connect)
+    assert w.run_once() is True and w.run_once() is True
+    job = get_job(unconfirmed)
+    assert job["status"] == "failed" and "$1.50 needs confirmation" in job["error"] and job["result"] is None
+    assert get_job(confirmed)["status"] == "done"
+    assert isolated == ["final"]  # only the confirmed job spent
+
+
 def test_worker_rechecks_budget_at_run_time(isolated, monkeypatch):
     jid = make_job("final")
     spend(monkeypatch, gemini_usd=8.95)  # spent elsewhere after the job was queued
@@ -215,7 +254,16 @@ def test_remote_host_forbidden():
         current_user(SimpleNamespace(client=SimpleNamespace(host="10.0.0.5")))
     assert e.value.status_code == 403
     assert current_user(SimpleNamespace(client=SimpleNamespace(host="127.0.0.1"))) == "owner"
-    assert TestClient(app_mod.app, client=("10.0.0.5", 50000)).get("/api/health").status_code == 403
+    assert TestClient(app_mod.app, base_url="http://127.0.0.1", client=("10.0.0.5", 50000)).get(
+        "/api/health").status_code == 403
+
+
+def test_no_test_hosts_in_production_allow_lists():
+    assert local_client().get("/api/health").status_code == 200
+    assert TestClient(app_mod.app).get("/api/health").status_code == 400  # Host "testserver"
+    assert TestClient(app_mod.app, base_url="http://127.0.0.1").get("/api/health").status_code == 403  # "testclient"
+    with pytest.raises(HTTPException):
+        current_user(SimpleNamespace(client=SimpleNamespace(host="testclient")))
 
 
 def test_browser_cross_site_requests_blocked(client):

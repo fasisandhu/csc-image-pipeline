@@ -80,6 +80,9 @@ def test_valid_value_rejects_unknown():
     assert valid_value("colour", "#12345", {}) is False
     assert valid_value("colour", {"name": "Teal", "hex": "#1F6F78"}, {})
     assert not valid_value("colour", {"name": "", "hex": "#1F6F78"}, {})
+    # a long name would overflow a Windows path after a paid call: 40 characters at most
+    assert valid_value("colour", {"name": "T" * 40, "hex": "#1F6F78"}, {})
+    assert not valid_value("colour", {"name": "T" * 41, "hex": "#1F6F78"}, {})
     assert valid_value("gsm", "450", {"catalogue": "zip"}) and valid_value("gsm", 450, {"catalogue": "zip"})
     assert not valid_value("nope", "x", {})
 

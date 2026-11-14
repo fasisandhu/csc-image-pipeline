@@ -116,3 +116,34 @@ def test_custom_colour_allowed_and_validated():
     spec["shot"]["garment"]["colour"] = "teal"
     with pytest.raises(CompileError, match="palette"):
         compile_spec(spec)
+
+
+def test_ledger_record_holds_a_lock(monkeypatch, tmp_path):
+    """The worker thread and request threads spend at the same time: each append runs under one lock."""
+    import threading
+
+    monkeypatch.setattr(ledger, "LOG", tmp_path / "log.jsonl")
+    seen = []
+
+    class Spy:
+        def __enter__(self):
+            seen.append("enter")
+
+        def __exit__(self, *exc):
+            seen.append("exit")
+
+    monkeypatch.setattr(ledger, "_LOCK", Spy())
+    entry = ledger.record({"provider": "gemini", "cost_usd": 0.1})
+    assert seen == ["enter", "exit"] and entry["cost_usd"] == 0.1
+
+    monkeypatch.setattr(ledger, "_LOCK", threading.Lock())
+    monkeypatch.setattr(ledger, "LOG", tmp_path / "threads.jsonl")
+    big = "x" * 20000  # long lines: an unlocked append could interleave
+    threads = [threading.Thread(target=lambda i=i: [ledger.record({"i": i, "j": j, "pad": big}) for j in range(25)])
+               for i in range(8)]
+    for t in threads:
+        t.start()
+    for t in threads:
+        t.join()
+    lines = (tmp_path / "threads.jsonl").read_text(encoding="utf-8").splitlines()
+    assert len(lines) == 200 and all(json.loads(line)["pad"] == big for line in lines)

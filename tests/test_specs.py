@@ -40,7 +40,7 @@ def test_anchor_attached_only_when_approved_file_exists():
 
 
 def test_size_over_placement_max_fails_compile():
-    spec = build_spec({**BASE, **DESIGN, "placement": "full back", "size_cm": 34})
+    spec = build_spec({**BASE, **DESIGN, "recipe": "packshot-back", "placement": "full back", "size_cm": 34})
     with pytest.raises(CompileError, match="exceeds max 30"):
         compile_spec(spec)
 
@@ -80,3 +80,26 @@ def test_recipes_have_model_flag_and_all_compile():
 
 def test_colour_id():
     assert colour_id("olive") == "olive"
+
+
+OM_BACK = {**BASE, "recipe": "on-model-back", "cast": "Maya", "scene": "warm-studio"}
+
+
+@pytest.mark.parametrize("bad", [
+    {**BASE, **DESIGN, "design": "no-such-design"},
+    {**BASE, "recipe": "nope"},
+    {**OM_BACK, "scene": "nope"},
+    {**OM_BACK, "cast": "Nobody"},
+    {k: v for k, v in OM_BACK.items() if k != "cast"},
+    {**BASE, "catalogue": "nope"},
+])
+def test_bad_answers_raise_compile_error(bad):
+    with pytest.raises(CompileError):
+        build_spec(bad)
+
+
+def test_placement_must_suit_recipe_view():
+    with pytest.raises(CompileError, match="on-model-back"):
+        build_spec({**OM_BACK, **DESIGN, "placement": "centre chest"})
+    spec = build_spec({**OM_BACK, **DESIGN, "placement": "full back", "size_cm": 30})
+    compile_spec(spec)

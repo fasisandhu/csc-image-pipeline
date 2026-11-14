@@ -6,7 +6,7 @@ from __future__ import annotations
 
 import re
 
-from .compile import REF_ROLES, ROOT, load_json, resolve_colour
+from .compile import REF_ROLES, ROOT, CompileError, load_json, resolve_colour
 from .designs import design_for
 
 
@@ -40,13 +40,21 @@ def build_spec(answers: dict, creative: dict | None = None) -> dict:
     """creative may override pose, and background on on-model shots only."""
     creative = creative or {}
     recipes = load_recipes()
+    if answers.get("recipe") not in recipes["recipes"]:
+        raise CompileError(f"unknown recipe {answers.get('recipe')!r}")
     recipe = recipes["recipes"][answers["recipe"]]
+    if not (ROOT / "catalogue" / f"{answers.get('catalogue')}.json").exists():
+        raise CompileError(f"unknown catalogue entry {answers.get('catalogue')!r}")
     brand = load_json("brand/brand.json")
     resolve_colour(answers["colour"])  # fail early on an unknown colour
 
     background, lighting = recipe["background"], recipe["lighting"]
     model = {"present": False, "cast": "", "pose": ""}
     if recipe["model"]:
+        if answers.get("scene") not in recipes["scenes"]:
+            raise CompileError(f"unknown scene {answers.get('scene')!r}")
+        if answers.get("cast") not in load_json("brand/cast.json")["cast"]:
+            raise CompileError(f"unknown or missing cast {answers.get('cast')!r}")
         scene = recipes["scenes"][answers["scene"]]
         background = creative.get("background") or scene["background"]
         lighting = scene["lighting"]
@@ -54,9 +62,11 @@ def build_spec(answers: dict, creative: dict | None = None) -> dict:
 
     decoration = []
     if _decorated(answers):
-        design = design_for(answers["design"])
+        design = design_for(answers.get("design") or "")
         if design is None:
-            raise ValueError(f"unknown design {answers['design']!r}")
+            raise CompileError(f"unknown design {answers.get('design')!r}")
+        if answers.get("placement") not in recipe["placements"]:
+            raise CompileError(f"placement {answers.get('placement')!r} not available on recipe {answers['recipe']}")
         decoration.append({"type": answers["technique"], "artwork": design["file"],
                            "placement": answers["placement"], "size_cm": answers["size_cm"],
                            "render_mode": "generate_and_verify"})

@@ -160,6 +160,46 @@ def colour_check(image: str | Path, target_hex: str, on_model: bool) -> dict:
     }
 
 
+def allowed_texts(spec: dict) -> list[str]:
+    """Text the shot may legitimately show: each decoration design's text plus the neck label."""
+    from .designs import design_for
+
+    shot = spec["shot"]
+    out = []
+    for d in shot.get("decoration", []):
+        design = design_for(d.get("artwork", ""))
+        if design and design.get("text"):
+            out.append(design["text"])
+    neck = (shot.get("labels") or {}).get("neck")
+    if neck:
+        out.append(neck)
+    return out
+
+
+def stray_text_check(image: str | Path, allowed: list[str]) -> dict:
+    """Read all text in the render; flag any that is not the shot's own artwork or neck label."""
+    from .logo import normalise_text
+    from .providers.vision import GeminiVision
+
+    image = Path(image)
+    vision = GeminiVision()
+    res = ledger.logged_call(
+        {"event": "vision", "purpose": "stray_text", "provider": vision.name, "model": vision.model,
+         "tier": "qa", "image": rel(image)},
+        vision.estimate(),
+        lambda: vision.read_all_text(image),
+    )
+    found = [i["text"] for i in res.data]
+    norm_allowed = [normalise_text(a) for a in allowed]
+    stray = []
+    for t in found:
+        n = normalise_text(t)
+        if n and not any(n in a for a in norm_allowed):
+            stray.append(t)
+    return {"result": "fail" if stray else "pass", "code": "unintended_text" if stray else None,
+            "found": found, "stray": stray}
+
+
 def next_action(entry: dict, codes: list[str]) -> tuple[str, str | None]:
     """(action, code): approve | finish | repair | composite | regenerate | flag, following the CLAUDE.md limits."""
     rules = load_json("brand/repairs.json")
@@ -222,6 +262,12 @@ def main() -> int:
         return 1
     print(f"colour  {colour['result']}  dE2000 {colour.get('de2000')}  measured {colour.get('measured_hex')} "
           f"vs {target}  (dL {colour.get('dL')}, da {colour.get('da')}, db {colour.get('db')}; mask: {colour['mask_source']})")
+    try:
+        stray = stray_text_check(image, allowed_texts(spec))
+    except (ProviderError, ledger.BudgetError) as e:
+        print(f"stray text: error {e}")
+    else:
+        print("stray text: pass" if stray["result"] == "pass" else f"stray text: FAIL {stray['stray']}")
     if not args.visual and not args.fail:
         print("\nChecklist for visual review:")
         for q in checklist(entry["shot_id"]):

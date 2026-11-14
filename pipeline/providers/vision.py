@@ -122,3 +122,20 @@ class GeminiVision:
         data, cost, units, size = self._ask(Path(image), prompt)
         items = data if isinstance(data, list) else [data]
         return VisionResult([self._to_px(i, size) for i in items], cost, units)
+
+    def read_all_text(self, image: Path) -> VisionResult:
+        """Every piece of visible text anywhere in the image, with its box in pixels."""
+        prompt = (
+            "Find every piece of visible text anywhere in this image: on the garment, on labels, tags, "
+            "stickers, signs and in the background. Output a JSON list with one entry per piece of text; "
+            'each entry has "box_2d" as [ymin, xmin, ymax, xmax] normalised to 0-1000 and "text": the exact '
+            "characters, letter by letter, preserving spelling and case. Do not correct or guess. "
+            "Output [] if there is no text."
+        )
+        data, cost, units, size = self._ask(Path(image), prompt)
+        items = data if isinstance(data, list) else [data]
+        out = []
+        for i in items:
+            px = self._to_px(i, size)
+            out.append({"text": str(i.get("text", "")), "box": px.get("box")})
+        return VisionResult(out, cost, units)

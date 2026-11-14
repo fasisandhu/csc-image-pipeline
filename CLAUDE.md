@@ -38,7 +38,8 @@ Full research (tools, limits, licences, prompts, workflow): https://claude.ai/ar
 
 ## Budget rules
 
-- Gemini spend is funded by the $10/month Google AI Pro credit. Hard cap: $9.00 a month in code, with the budget alert set in Google Cloud.
+- Gemini spend is funded by the $10/month Google AI Pro credit. Hard cap: $9.00 a month in code, with the budget alert set in Google Cloud. The studio's Gemini brain (fallback, and the brain for users without Claude) spends under the same $9.00 cap.
+- Studio users on a Claude API key each have their own monthly cap (`STUDIO_<USER>_CLAUDE_CAP_USD`, default $5). Subscription use is not billed.
 - Split: about $4 Nano Banana 2, about $6 Nano Banana Pro. Track estimated spend per call in `out/log.jsonl`.
 - Stop and ask me or my teammate before any run estimated above $1, or any run that would cross the cap. Either of us can approve.
 - Cloudflare: stop at 9,500 neurons a day and queue the rest for the next day.
@@ -47,6 +48,7 @@ Full research (tools, limits, licences, prompts, workflow): https://claude.ai/ar
 ## Security
 
 - Keys live only in `.env` (`GEMINI_API_KEY`, `CLOUDFLARE_ACCOUNT_ID`, `CLOUDFLARE_API_TOKEN`). Load with python-dotenv.
+- The studio's per-user Claude credentials (`STUDIO_<USER>_CLAUDE_OAUTH_TOKEN` or `STUDIO_<USER>_ANTHROPIC_API_KEY`) also live only in `.env`.
 - `.env`, `out/`, and any client artwork are in `.gitignore` from the first commit.
 - Never print, log or echo key values.
 
@@ -58,11 +60,13 @@ csc-image-pipeline/
 ├── .env.example          # key names only, no values
 ├── .gitignore
 ├── requirements.txt      # google-genai, requests, pillow, opencv-python, python-dotenv, resvg-py, claude-agent-sdk, fastapi, uvicorn
+├── requirements-dev.txt  # test-only dependencies (pytest, httpx)
 ├── brand/
 │   ├── brand.json        # name, colours (hex + Pantone), fonts, style_block, captions
 │   ├── cast.json         # the four AI models (below)
 │   ├── palette.json      # showcase colours for samples (examples, not limits)
 │   ├── qa_checklist.json # garment QA checklist as data
+│   ├── recipes.json      # dashboard shot types and scenes (style-neutral)
 │   ├── designs/          # sample designs with invented brand names (step 5)
 │   └── logo/             # placeholder logo until the real one is final
 ├── catalogue/
@@ -76,6 +80,7 @@ csc-image-pipeline/
 ├── prompts/              # compiled prompts per shot and provider
 ├── pipeline/
 │   ├── providers/        # cloudflare.py, gemini.py, vision.py (one adapter each)
+│   ├── specs.py          # dashboard answers -> shot spec, anchor lookup, shot id
 │   ├── compile.py        # spec -> prompts, negatives, QA checklist
 │   ├── router.py
 │   ├── generate.py
@@ -92,7 +97,11 @@ csc-image-pipeline/
 │   ├── app.py            # FastAPI JSON API: questions, brief, preview, jobs
 │   ├── db.py             # SQLite job store (out/studio.db)
 │   ├── worker.py         # runs queued jobs through the pipeline, one at a time, no retries
-│   └── identity.py       # who is asking (localhost = owner)
+│   ├── identity.py       # who is asking (localhost = owner)
+│   ├── guide.py          # teammate guide pages, numbers filled from the live rule files
+│   ├── guide/            # guide pages as Markdown with {{placeholders}}
+│   └── __main__.py       # python -m studio: bind 127.0.0.1, mark interrupted jobs, start worker, serve
+├── spikes/               # throwaway experiments with findings (e.g. claude_sdk/)
 ├── docs/superpowers/     # design specs and implementation plans
 ├── plugins/csc-studio/   # Claude Code plugin: skills that drive the pipeline CLI
 ├── .claude-plugin/marketplace.json  # local marketplace "cut-sew-club" listing csc-studio
@@ -112,6 +121,8 @@ csc-image-pipeline/
 - captions: "Concept render. Production photos are shot for every order." and, for on-model shots, "AI model, concept render"
 
 `brand/palette.json`: about 10 popular streetwear hoodie colours with hex codes, used for sample images. Examples only. A spec may pick a palette id or give any custom colour as `{"name", "hex"}`; colour QA checks the render against whatever the spec asked for.
+
+`brand/recipes.json`: the dashboard's shot types (purpose, camera, lighting, background, placements in view, must-show and avoid items) and scenes for on-model shots. A fact source like the rest of `brand/`. Its text stays style-neutral: fit, shoulder, pockets and zip come from `catalogue/` through the compiler.
 
 Sample designs (`brand/designs/`): artwork shown on sample hoodies so customers can picture their own. Always invented brand names, never real brands. Start with hand-made SVGs (exact, free, used to test the logo and composite step), then add Nano Banana Pro designs for variety. Text in a generated design goes through the same logo verification.
 
@@ -181,7 +192,7 @@ Facts come from `catalogue/` and `brand/`, never invented. The spec references c
 3. **Compile:** prompt per provider, negative list, QA checklist.
 4. **Route:** pick provider by `tier` and remaining budget; fall back or queue when a budget runs out.
 5. **Generate:** 2–4 Cloudflare drafts, pick the layout, then the Gemini final at 2K with anchor and cast references attached. Log prompt, model, refs and cost for every call.
-6. **QA:** Claude checks each render against the checklist; a script checks garment colour against the spec hex (flag ΔE > 5). Failures get a reason code and go to `out/reject/`.
+6. **QA:** Claude checks each render against the checklist; a script checks garment colour against the spec hex (flag ΔE > 5); a stray-text scan (Gemini vision reads every visible text) flags any text that is not the shot's own design or neck label as `unintended_text`. Failures get a reason code and go to `out/reject/`.
 7. **Repair:** one-change region edit prompt, then QA again. Two failed repairs, then regenerate. Two failed regenerations, then flag for me.
 8. **Logo:**
    - generate with the logo attached (Pro);

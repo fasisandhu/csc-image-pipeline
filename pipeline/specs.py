@@ -9,6 +9,8 @@ import re
 from .compile import REF_ROLES, ROOT, CompileError, load_json, resolve_colour
 from .designs import design_for
 
+NO_TEXT, NO_OTHER_TEXT = "text or logos", "any other text or logos"
+
 
 def load_recipes() -> dict:
     data = load_json("brand/recipes.json")
@@ -29,6 +31,11 @@ def find_anchor(catalogue: str, colour: str | dict, gsm: int) -> str | None:
 
 def _decorated(answers: dict) -> bool:
     return answers.get("decoration") == "design"
+
+
+def _avoid(items: list[str], decorated: bool) -> list[str]:
+    """A decorated shot carries its design: it avoids only other text or logos."""
+    return [NO_OTHER_TEXT if decorated and x == NO_TEXT else x for x in items]
 
 
 def shot_id_for(answers: dict) -> str:
@@ -61,6 +68,8 @@ def build_spec(answers: dict, creative: dict | None = None) -> dict:
         model = {"present": True, "cast": answers["cast"], "pose": creative.get("pose") or recipe["pose"]}
 
     decoration = []
+    if recipe.get("requires_decoration") and not _decorated(answers):
+        raise CompileError(f"recipe {answers['recipe']} needs a design: a close-up has nothing to show without one")
     if _decorated(answers):
         design = design_for(answers.get("design") or "")
         if design is None:
@@ -89,6 +98,6 @@ def build_spec(answers: dict, creative: dict | None = None) -> dict:
             "background": background,
             "model": model,
             "must_show": list(recipe["must_show"]),
-            "avoid": list(recipe["avoid"]),
+            "avoid": _avoid(recipe["avoid"], _decorated(answers)),
         },
     }

@@ -1,27 +1,108 @@
-import json
-from pathlib import Path
+import re
 
 import pytest
 
-from pipeline.compile import CompileError, compile_spec
+from pipeline.compile import WORD_RANGE, CompileError, compile_spec, load_json
 from pipeline.specs import build_spec, colour_id, find_anchor, load_recipes, shot_id_for
 
 BASE = {"catalogue": "pullover-oversized", "colour": "washed-black", "gsm": 450,
         "recipe": "packshot-front", "decoration": "none"}
 DESIGN = {"decoration": "design", "design": "oakmere-athletic", "technique": "3D puff embroidery",
           "placement": "centre chest", "size_cm": 22}
+CATALOGUES = ("pullover-classic", "pullover-oversized", "zip")
+SHOULDER_TERMS = {"dropped": r"\bdropped\b", "set-in": r"\bset-in\b"}
 
 
-def ref_spec(name):
-    return json.loads(Path(f"specs/{name}.json").read_text())["shot"]
+def _num(v):
+    return isinstance(v, (int, float)) and not isinstance(v, bool)
 
 
-def test_packshot_front_matches_existing_anchor_spec():
-    spec = build_spec(BASE)
-    ref = ref_spec("ovs-wblack-450-anchor-front")
-    for k in ("purpose", "camera", "lighting", "background", "must_show"):
-        assert spec["shot"][k] == ref[k]
-    assert compile_spec(spec).tier == "standard"
+def placements(recipe: dict, cat: dict) -> list[tuple[str, float]]:
+    """(placement, max_cm) the dashboard offers for this recipe and style: in view, with a numeric max."""
+    return [(p, cat["decoration_placements"][p]["max_cm"]) for p in recipe["placements"]
+            if _num(cat["decoration_placements"].get(p, {}).get("max_cm"))]
+
+
+def combos(scene_ids, cast, colour, gsms, design, technique):
+    """Answers for every recipe x catalogue x {none, design} (each valid placement) x scene."""
+    data = load_recipes()
+    for rid, recipe in data["recipes"].items():
+        for cat_id in CATALOGUES:
+            cat = load_json(f"catalogue/{cat_id}.json")
+            for gsm in gsms(cat):
+                base = {"catalogue": cat_id, "colour": colour, "gsm": gsm, "recipe": rid}
+                decos = [{"decoration": "none"}] if not recipe.get("requires_decoration") else []
+                decos += [{"decoration": "design", "design": design, "technique": technique,
+                           "placement": p, "size_cm": mx} for p, mx in placements(recipe, cat)]
+                for deco in decos:
+                    for scene in (scene_ids if recipe["model"] else [None]):
+                        extra = {"cast": cast, "scene": scene} if recipe["model"] else {}
+                        yield {**base, **deco, **extra}
+
+
+def test_packshot_front_is_standard():
+    assert compile_spec(build_spec(BASE)).tier == "standard"
+
+
+def test_recipe_text_never_contradicts_catalogue():
+    """Recipes are style-neutral: no shoulder or pocket word the catalogue does not say, and a decorated
+    shot never asks to be free of all text or logos."""
+    scenes = list(load_recipes()["scenes"])
+    n = 0
+    for a in combos(scenes, "Maya", "washed-black", lambda cat: [450], "oakmere-athletic", "3D puff embroidery"):
+        cat = load_json(f"catalogue/{a['catalogue']}.json")
+        c = compile_spec(build_spec(a))  # 4. compiles
+        n += 1
+        text = " ".join([c.prompts["paragraph"], c.prompts["flux_json"], *c.qa, *c.negatives]).lower()
+        for term, rx in SHOULDER_TERMS.items():  # 1. shoulder (zip's is not set yet: neither term)
+            if term != cat["shoulder"]:
+                assert not re.search(rx, text), (a, term)
+        if "kangaroo" in cat["construction"]["pockets"]:  # 2. pockets
+            assert not re.search(r"\bsplit\b", text), a
+        else:
+            assert "kangaroo" not in text, a
+        if a["decoration"] == "design":  # 3. a decorated shot is not "free of text or logos"
+            assert "Free of: text or logos" not in c.qa, a
+            assert "text or logos" not in c.negatives, a
+    assert n > 50
+
+
+def test_decorated_shot_avoids_only_other_text():
+    spec = build_spec({**BASE, **DESIGN})
+    assert "text or logos" not in spec["shot"]["avoid"]
+    assert "any other text or logos" in spec["shot"]["avoid"]
+    assert "text or logos" in build_spec(BASE)["shot"]["avoid"]  # a plain shot carries no text at all
+
+
+def test_closeup_requires_a_design():
+    recipe = load_recipes()["recipes"]["decoration-closeup"]
+    assert recipe["requires_decoration"] is True
+    with pytest.raises(CompileError, match="design"):
+        build_spec({**BASE, "recipe": "decoration-closeup"})
+    compile_spec(build_spec({**BASE, **DESIGN, "recipe": "decoration-closeup"}))
+
+
+def test_flat_lay_offers_only_front_placements():
+    assert "full back" not in load_recipes()["recipes"]["flat-lay"]["placements"]
+
+
+def test_every_combination_inside_word_range():
+    """CLAUDE.md: 120-220 words. Longest cast description, longest palette colour name, longest design
+    text and technique; every GSM (its weight look changes the length)."""
+    cast = max(load_json("brand/cast.json")["cast"].items(), key=lambda kv: len(kv[1]["description"].split()))[0]
+    palette = load_json("brand/palette.json")["colours"]
+    colour = max(palette, key=lambda k: len(palette[k]["name"].split()))
+    designs = load_json("brand/designs/designs.json")["designs"]
+    design = max(designs, key=lambda d: len((d.get("text") or "").split()))["id"]
+    technique = max(load_json("catalogue/pullover-classic.json")["decoration_types"], key=lambda t: len(t.split()))
+    scenes = list(load_recipes()["scenes"])
+    counts, outside = [], []
+    for a in combos(scenes, cast, colour, lambda cat: cat["gsm_options"], design, technique):
+        c = compile_spec(build_spec(a))
+        counts.append(c.word_count)
+        if not WORD_RANGE[0] <= c.word_count <= WORD_RANGE[1]:
+            outside.append((c.word_count, a))
+    assert counts and not outside, outside[:5]
 
 
 def test_design_raises_tier_and_fills_decoration():
@@ -54,11 +135,12 @@ def test_shot_id_stable_and_custom_colour_slugged():
 
 def test_on_model_takes_scene_and_recipe_pose():
     answers = {**BASE, "recipe": "on-model-front", "cast": "Maya", "scene": "warm-studio"}
-    ref = ref_spec("ovs-wblack-450-maya-front")
+    data = load_recipes()
+    scene, recipe = data["scenes"]["warm-studio"], data["recipes"]["on-model-front"]
     spec = build_spec(answers)
-    assert spec["shot"]["background"] == ref["background"]
-    assert spec["shot"]["lighting"] == ref["lighting"]
-    assert spec["shot"]["model"] == {"present": True, "cast": "Maya", "pose": ref["model"]["pose"]}
+    assert spec["shot"]["background"] == scene["background"]
+    assert spec["shot"]["lighting"] == scene["lighting"]
+    assert spec["shot"]["model"] == {"present": True, "cast": "Maya", "pose": recipe["pose"]}
     spec = build_spec(answers, creative={"pose": "walking", "background": "x"})
     assert spec["shot"]["model"]["pose"] == "walking" and spec["shot"]["background"] == "x"
 

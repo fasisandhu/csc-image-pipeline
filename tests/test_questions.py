@@ -43,6 +43,15 @@ def test_placement_not_visible_in_view():
     assert not {o.id: o for o in sec({"catalogue": "pullover-oversized"}, "placement").options}["full back"].disabled
 
 
+def test_closeup_disables_plain():
+    opts = {o.id: o for o in sec({"recipe": "decoration-closeup"}, "decoration").options}
+    assert opts["none"].disabled and opts["none"].reason == "a close-up needs a design"
+    assert not opts["design"].disabled
+    assert not valid_value("decoration", "none", {"recipe": "decoration-closeup"})
+    assert valid_value("decoration", "none", {"recipe": "packshot-front"})
+    assert not any(o.disabled for o in sec({"recipe": "packshot-front"}, "decoration").options)
+
+
 def test_size_max_follows_placement():
     assert sec({"catalogue": "pullover-oversized", "placement": "full back"}, "size_cm").max == 30
 

@@ -1,5 +1,5 @@
 {
-  "_note": "Shot types and scenes for the dashboard. Text for packshot-front and on-model-front is copied verbatim from the approved test specs. On-model recipes take background and lighting from the chosen scene; packshots ignore the scene.",
+  "_note": "Shot types and scenes for the dashboard. Text is style-neutral: fit, shoulder, pockets and zip come from catalogue/ through the compiler, never from here. Keep every compiled prompt inside CLAUDE.md's 120-220 words (tests/test_specs.py checks every combination). On-model recipes take background and lighting from the chosen scene; packshots ignore the scene. requires_decoration: the shot has nothing to show without a design.",
   "recipes": {
     "packshot-front": {
       "label": "Packshot, front",
@@ -13,17 +13,17 @@
         "centre chest",
         "sleeve"
       ],
-      "purpose": "Front-view anchor packshot of a single hoodie for the product page, shown as a ghost-mannequin catalogue shot with the body shape filled out and no visible mannequin",
+      "purpose": "Front-view packshot of a single hoodie as a ghost-mannequin catalogue shot, body shape filled out",
       "camera": {
         "angle": "straight on at chest height",
         "lens": "50mm",
-        "framing": "whole garment centred with even margins on all sides"
+        "framing": "whole garment centred with even margins"
       },
-      "lighting": "soft, even studio light from a large overhead softbox with gentle front fill, showing the fleece texture",
-      "background": "seamless light grey studio background with a soft natural shadow below the hem",
+      "lighting": "soft, even overhead softbox light showing the fleece texture",
+      "background": "seamless light grey backdrop with a soft shadow below the hem",
       "must_show": [
         "both drawcords with metal aglets",
-        "the full kangaroo pocket",
+        "the pocket openings",
         "rib cuffs and hem"
       ],
       "avoid": [
@@ -42,16 +42,16 @@
         "full back",
         "sleeve"
       ],
-      "purpose": "Back-view packshot of a single hoodie for the product page, shown as a ghost-mannequin catalogue shot with the body shape filled out and no visible mannequin",
+      "purpose": "Back-view packshot of a single hoodie as a ghost-mannequin catalogue shot, body shape filled out",
       "camera": {
-        "angle": "straight on at chest height from behind",
+        "angle": "straight on from behind at chest height",
         "lens": "50mm",
-        "framing": "whole garment centred with even margins on all sides"
+        "framing": "whole garment centred with even margins"
       },
-      "lighting": "soft, even studio light from a large overhead softbox with gentle front fill, showing the fleece texture",
-      "background": "seamless light grey studio background with a soft natural shadow below the hem",
+      "lighting": "soft, even overhead softbox light showing the fleece texture",
+      "background": "seamless light grey backdrop with a soft shadow below the hem",
       "must_show": [
-        "the hood lying flat with its centre seam",
+        "the hood's centre seam",
         "the full back panel",
         "rib cuffs and hem"
       ],
@@ -72,18 +72,18 @@
         "centre chest",
         "sleeve"
       ],
-      "purpose": "Three-quarter-length on-model shot for the product page, showing the oversized fit and heavyweight drape",
+      "purpose": "On-model front view showing the fit and heavyweight drape",
       "camera": {
-        "angle": "at chest height, slightly to the model's right",
+        "angle": "at chest height, slightly off centre",
         "lens": "85mm",
-        "framing": "head to mid-thigh with the model centred"
+        "framing": "framed head to mid-thigh"
       },
-      "lighting": "soft window-style key light from camera left with gentle fill",
+      "lighting": "soft window-style key light from camera left",
       "background": "plain warm off-white studio wall",
-      "pose": "standing relaxed with weight on one leg, one hand in the kangaroo pocket, looking just off camera",
+      "pose": "standing relaxed, one hand in a front pocket",
       "must_show": [
-        "dropped shoulder seams",
-        "both drawcords with metal aglets"
+        "the shoulder seams",
+        "both drawcords"
       ],
       "avoid": [
         "text or logos",
@@ -101,19 +101,18 @@
         "full back",
         "sleeve"
       ],
-      "purpose": "Three-quarter-length on-model shot from behind for the product page, showing the back panel, hood and heavyweight drape",
+      "purpose": "On-model back view showing the fit and heavyweight drape",
       "camera": {
-        "angle": "at chest height, directly behind the model",
+        "angle": "directly behind at chest height",
         "lens": "85mm",
-        "framing": "head to mid-thigh with the model centred"
+        "framing": "framed head to mid-thigh"
       },
-      "lighting": "soft window-style key light from camera left with gentle fill",
+      "lighting": "soft window-style key light from camera left",
       "background": "plain warm off-white studio wall",
-      "pose": "standing relaxed with weight on one leg, back to camera, head turned slightly to one side, arms loose at the sides",
+      "pose": "standing relaxed, back to camera, head turned slightly",
       "must_show": [
         "the full back panel",
-        "the hood resting on the shoulders with its centre seam",
-        "rib cuffs and hem"
+        "the hood"
       ],
       "avoid": [
         "text or logos",
@@ -127,19 +126,20 @@
       "tier": "premium",
       "aspect": "4:5",
       "resolution": "2K",
+      "requires_decoration": true,
       "placements": [
         "left chest",
         "centre chest",
         "full back",
         "sleeve"
       ],
-      "purpose": "Close-up detail shot of the decoration on the hoodie for the product page, showing the stitching or print texture and the surrounding fleece",
+      "purpose": "Close-up detail shot of the decoration, showing its stitch or print texture and the surrounding fleece",
       "camera": {
         "angle": "straight on, slightly above the decoration",
         "lens": "100mm macro",
         "framing": "the decoration filling most of the frame with a little fabric around it"
       },
-      "lighting": "soft raking side light that shows the texture of the decoration and the fleece",
+      "lighting": "soft raking side light showing the decoration and fleece texture",
       "background": "the garment fabric fills the frame",
       "must_show": [
         "the decoration crisp and fully in frame",
@@ -159,20 +159,19 @@
       "placements": [
         "left chest",
         "centre chest",
-        "full back",
         "sleeve"
       ],
-      "purpose": "Flat-lay shot of a single hoodie laid on a surface for the product page, with sleeves relaxed at the sides and the body shape clearly visible",
+      "purpose": "Flat-lay shot of a single hoodie, sleeves relaxed at the sides, body shape clearly visible",
       "camera": {
         "angle": "straight down from above",
         "lens": "50mm",
-        "framing": "whole garment centred with even margins on all sides"
+        "framing": "whole garment centred with even margins"
       },
-      "lighting": "soft, even overhead daylight with a gentle natural shadow around the edges, showing the fleece texture",
+      "lighting": "soft, even overhead daylight showing the fleece texture",
       "background": "plain light concrete-grey surface",
       "must_show": [
         "both drawcords with metal aglets",
-        "the full kangaroo pocket",
+        "the pocket openings",
         "rib cuffs and hem"
       ],
       "avoid": [
@@ -184,23 +183,23 @@
   "scenes": {
     "studio-grey": {
       "label": "Studio grey",
-      "background": "seamless light grey studio background with a soft natural shadow below the hem",
-      "lighting": "soft, even studio light from a large overhead softbox with gentle front fill, showing the fleece texture"
+      "background": "seamless light grey studio backdrop",
+      "lighting": "soft, even softbox light with gentle front fill"
     },
     "warm-studio": {
       "label": "Warm studio",
       "background": "plain warm off-white studio wall",
-      "lighting": "soft window-style key light from camera left with gentle fill"
+      "lighting": "soft window-style key light from camera left"
     },
     "concrete-daylight": {
       "label": "Concrete and daylight",
       "background": "unpainted concrete wall in an urban courtyard",
-      "lighting": "soft overcast daylight from above and in front with gentle natural fill"
+      "lighting": "soft overcast daylight with gentle fill"
     },
     "warm-cafe": {
       "label": "Warm cafe",
-      "background": "softly blurred warm cafe interior with wooden tables and amber lights",
-      "lighting": "warm window light from camera right mixed with soft ambient interior glow"
+      "background": "softly blurred warm cafe interior",
+      "lighting": "warm window light with a soft amber interior glow"
     }
   }
 }

@@ -17,6 +17,7 @@ from pipeline.specs import load_recipes
 QDIR = Path(__file__).parent / "questions"
 HEX_RE = re.compile(r"#[0-9A-Fa-f]{6}")
 NO_MAX = "max size not set yet"
+NEEDS_DESIGN = "a close-up needs a design"
 
 
 @dataclass
@@ -100,7 +101,13 @@ def _visible(sec: dict, answers: dict, recipes: dict) -> bool:
 def _options(sec: dict, answers: dict, cats: dict, recipes: dict) -> list[Option]:
     src, cat = sec["source"], answers.get("catalogue")
     if src == "static":
-        return [Option(**o) for o in sec["options"]]
+        opts = [Option(**o) for o in sec["options"]]
+        recipe = recipes["recipes"].get(answers.get("recipe")) or {}
+        if sec["id"] == "decoration" and recipe.get("requires_decoration"):
+            for o in opts:
+                if o.id == "none":
+                    o.disabled, o.reason = True, NEEDS_DESIGN
+        return opts
     if src == "catalogue":
         return [Option(k, c["style_name"]) for k, c in cats.items()]
     if src == "palette":

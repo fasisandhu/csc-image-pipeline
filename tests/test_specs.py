@@ -126,11 +126,39 @@ def test_size_over_placement_max_fails_compile():
         compile_spec(spec)
 
 
+HASH = r"-[0-9a-f]{8}$"
+
+
 def test_shot_id_stable_and_custom_colour_slugged():
-    assert shot_id_for(BASE) == shot_id_for(dict(BASE)) == "pullover-oversized-washed-black-450-packshot-front"
+    sid = shot_id_for(BASE)
+    assert sid == shot_id_for(dict(BASE)) == shot_id_for(dict(reversed(list(BASE.items()))))
+    assert re.fullmatch(r"pullover-oversized-washed-black-450-packshot-front" + HASH, sid)
     teal = {**BASE, "colour": {"name": "Teal Blue", "hex": "#1F6F78"}}
-    assert shot_id_for(teal) == "pullover-oversized-teal-blue-450-packshot-front"
-    assert shot_id_for({**BASE, **DESIGN}).endswith("-packshot-front-oakmere-athletic")
+    assert re.fullmatch(r"pullover-oversized-teal-blue-1f6f78-450-packshot-front" + HASH, shot_id_for(teal))
+    assert re.fullmatch(r".*-packshot-front-oakmere-athletic" + HASH, shot_id_for({**BASE, **DESIGN}))
+    # the same shot from equivalent answers: gsm as text, size as 22.0, hex in lower case
+    assert shot_id_for({**BASE, **DESIGN, "gsm": "450", "size_cm": 22.0}) == shot_id_for({**BASE, **DESIGN})
+    assert shot_id_for({**teal, "colour": {"name": "Teal Blue", "hex": "#1f6f78"}}) == shot_id_for(teal)
+
+
+def test_shot_id_ignores_answers_the_shot_does_not_use():
+    # a hidden cast or scene on a packshot, or a design left over after choosing plain, is not the shot
+    assert shot_id_for({**BASE, "cast": "Maya", "scene": "warm-cafe"}) == shot_id_for(BASE)
+    assert shot_id_for({**BASE, **DESIGN, "decoration": "none"}) == shot_id_for(BASE)
+
+
+def test_shot_id_collisions():
+    om = {**BASE, "recipe": "on-model-front"}
+    assert (shot_id_for({**om, "cast": "Maya", "scene": "warm-cafe"})
+            != shot_id_for({**om, "cast": "Amir", "scene": "concrete-daylight"}))
+    close = {**BASE, "recipe": "decoration-closeup", "decoration": "design", "design": "kilnworks-kw"}
+    assert (shot_id_for({**close, "technique": "screen print", "placement": "left chest", "size_cm": 9})
+            != shot_id_for({**close, "technique": "3D puff embroidery", "placement": "full back", "size_cm": 30}))
+    t1, t2 = {"name": "Teal", "hex": "#1F6F78"}, {"name": "Teal", "hex": "#00CED1"}
+    assert shot_id_for({**BASE, "colour": t1}) != shot_id_for({**BASE, "colour": t2})
+    assert colour_id(t1) != colour_id(t2)
+    assert find_anchor("pullover-oversized", t1, 450) is None
+    assert build_spec({**BASE, "colour": t1})["shot"]["shot_id"] != build_spec({**BASE, "colour": t2})["shot"]["shot_id"]
 
 
 def test_on_model_takes_scene_and_recipe_pose():
@@ -162,6 +190,8 @@ def test_recipes_have_model_flag_and_all_compile():
 
 def test_colour_id():
     assert colour_id("olive") == "olive"
+    assert colour_id({"name": "Teal Blue", "hex": "#1F6F78"}) == "teal-blue-1f6f78"
+    assert colour_id({"name": "!!!", "hex": "#1F6F78"}) == "1f6f78"  # nothing left to slug: the hex alone
 
 
 OM_BACK = {**BASE, "recipe": "on-model-back", "cast": "Maya", "scene": "warm-studio"}

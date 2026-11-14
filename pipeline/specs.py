@@ -4,12 +4,17 @@ Recipes (brand/recipes.json) hold shot types and scenes; the compiler expands th
 """
 from __future__ import annotations
 
+import hashlib
+import json
 import re
 
 from .compile import REF_ROLES, ROOT, CompileError, load_json, resolve_colour
 from .designs import design_for
 
 NO_TEXT, NO_OTHER_TEXT = "text or logos", "any other text or logos"
+SHOT_KEYS = ("catalogue", "colour", "gsm", "recipe", "decoration")
+MODEL_KEYS = ("cast", "scene")
+DESIGN_KEYS = ("design", "technique", "placement", "size_cm")
 
 
 def load_recipes() -> dict:
@@ -18,10 +23,13 @@ def load_recipes() -> dict:
 
 
 def colour_id(colour: str | dict) -> str:
-    """A palette id as is, or the slug of a custom colour name."""
+    """A palette id as is; a custom colour as "<slug of its name>-<hex, lower case, no #>" (just the hex
+    when the name leaves no slug), so two custom colours with one name never share an id or an anchor."""
     if isinstance(colour, str):
         return colour
-    return re.sub(r"[^a-z0-9]+", "-", colour["name"].lower()).strip("-")
+    slug = re.sub(r"[^a-z0-9]+", "-", colour["name"].lower()).strip("-")
+    hex6 = colour["hex"].lstrip("#").lower()
+    return f"{slug}-{hex6}" if slug else hex6
 
 
 def find_anchor(catalogue: str, colour: str | dict, gsm: int) -> str | None:
@@ -38,9 +46,40 @@ def _avoid(items: list[str], decorated: bool) -> list[str]:
     return [NO_OTHER_TEXT if decorated and x == NO_TEXT else x for x in items]
 
 
+def _number(v):
+    """450 for "450", 450.0 or 450; other values unchanged."""
+    if isinstance(v, str) and re.fullmatch(r"\d+(\.\d+)?", v.strip()):
+        v = float(v)
+    return int(v) if isinstance(v, float) and v.is_integer() else v
+
+
+def _facts(answers: dict) -> dict:
+    """The fact-bearing answers this shot uses, one spelling each: cast and scene only with a model,
+    design fields only when decorated, so a hidden or left-over answer never changes the id."""
+    recipe = load_recipes()["recipes"].get(answers.get("recipe")) or {}
+    keys = list(SHOT_KEYS)
+    if recipe.get("model", True):
+        keys += MODEL_KEYS
+    if _decorated(answers):
+        keys += DESIGN_KEYS
+    out = {k: answers[k] for k in keys if k in answers}
+    for k in ("gsm", "size_cm"):
+        if k in out:
+            out[k] = _number(out[k])
+    if isinstance(out.get("colour"), dict):
+        out["colour"] = {"name": out["colour"].get("name"), "hex": str(out["colour"].get("hex", "")).lower()}
+    return out
+
+
 def shot_id_for(answers: dict) -> str:
-    sid = f"{answers['catalogue']}-{colour_id(answers['colour'])}-{answers['gsm']}-{answers['recipe']}"
-    return f"{sid}-{answers['design']}" if _decorated(answers) else sid
+    """Readable prefix, the design when decorated, then 8 hex of a sha256 over the fact-bearing answers.
+    Different shots never share an id (qa.next_action counts finals per shot_id); the same answers
+    always give the same one."""
+    sid = f"{answers['catalogue']}-{colour_id(answers['colour'])}-{_number(answers['gsm'])}-{answers['recipe']}"
+    if _decorated(answers):
+        sid += f"-{answers['design']}"
+    canon = json.dumps(_facts(answers), sort_keys=True, separators=(",", ":"), ensure_ascii=False)
+    return f"{sid}-{hashlib.sha256(canon.encode('utf-8')).hexdigest()[:8]}"
 
 
 def build_spec(answers: dict, creative: dict | None = None) -> dict:

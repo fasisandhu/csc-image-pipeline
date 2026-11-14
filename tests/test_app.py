@@ -95,7 +95,8 @@ def test_preview_two_costs(client):
     assert b["base_usd"] == base
     assert b["worst_usd"] == round(base * (1 + R) + base * P * (1 + R), 2)  # 1.24 today
     assert b["action"] == "run" and b["reason"] == ""
-    assert b["shot_id"] == "pullover-oversized-washed-black-450-packshot-front-oakmere-athletic"
+    assert b["shot_id"] == build_spec(app_mod.checked(OAKMERE))["shot"]["shot_id"]
+    assert b["shot_id"].startswith("pullover-oversized-washed-black-450-packshot-front-oakmere-athletic-")
     assert load_json("brand/brand.json")["style_block"] in b["prompt"]
     assert isinstance(b["warnings"], list) and b["needs_anchor"] is False
 

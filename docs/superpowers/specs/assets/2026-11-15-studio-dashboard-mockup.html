@@ -1,0 +1,220 @@
+<h2>Friendlier builder, and where the images show up</h2>
+<p class="subtitle">Screen 1: the builder (C + live summary, polished). Screen 2: what happens after Approve. Scroll down for both.</p>
+
+<svg width="0" height="0" style="position:absolute">
+  <defs>
+    <symbol id="h-over" viewBox="0 0 100 100"><path d="M36 20 Q50 2 64 20 L86 27 Q93 30 95 40 L98 78 L84 80 L80 52 L80 95 L20 95 L20 52 L16 80 L2 78 L5 40 Q7 30 14 27 Z"/><path d="M40 21 Q50 30 60 21" fill="none" stroke="rgba(255,255,255,.35)" stroke-width="1.5"/><rect x="33" y="64" width="34" height="18" rx="3" fill="none" stroke="rgba(255,255,255,.3)" stroke-width="1.5"/><path d="M46 24 L45 44 M54 24 L55 44" stroke="rgba(255,255,255,.55)" stroke-width="1.6"/></symbol>
+    <symbol id="h-classic" viewBox="0 0 100 100"><path d="M38 20 Q50 3 62 20 L78 26 Q84 29 86 38 L92 80 L80 82 L74 50 L75 95 L25 95 L26 50 L20 82 L8 80 L14 38 Q16 29 22 26 Z"/><path d="M41 21 Q50 29 59 21" fill="none" stroke="rgba(255,255,255,.35)" stroke-width="1.5"/><rect x="35" y="64" width="30" height="17" rx="3" fill="none" stroke="rgba(255,255,255,.3)" stroke-width="1.5"/><path d="M46 24 L45 43 M54 24 L55 43" stroke="rgba(255,255,255,.55)" stroke-width="1.6"/></symbol>
+    <symbol id="h-zip" viewBox="0 0 100 100"><path d="M38 20 Q50 3 62 20 L78 26 Q84 29 86 38 L92 80 L80 82 L74 50 L75 95 L25 95 L26 50 L20 82 L8 80 L14 38 Q16 29 22 26 Z"/><path d="M50 22 L50 95" stroke="rgba(255,255,255,.7)" stroke-width="1.8"/><path d="M30 66 L42 66 M58 66 L70 66" stroke="rgba(255,255,255,.3)" stroke-width="1.5"/></symbol>
+  </defs>
+</svg>
+
+<style>
+  .ui { --ink:#17171a; --mut:#6b6b73; --line:#e6e4df; --bg:#f6f5f2; --card:#fff; --acc:#1f7a4a; --accbg:#eaf6ef;
+        background:var(--bg); color:var(--ink); border-radius:14px; font:14px/1.45 "Inter", system-ui, sans-serif; text-align:left; overflow:hidden; }
+  .ui * { box-sizing:border-box; }
+  .top { display:flex; align-items:center; gap:22px; padding:12px 20px; background:#fff; border-bottom:1px solid var(--line); }
+  .logo { font-weight:800; letter-spacing:.3px; } .logo b { color:var(--acc); }
+  .tabs a { color:var(--mut); margin-right:16px; font-size:13px; text-decoration:none; padding:6px 0; }
+  .tabs a.cur { color:var(--ink); font-weight:650; border-bottom:2px solid var(--ink); }
+  .tabs a.soon { opacity:.45; }
+  .pill { margin-left:auto; display:flex; align-items:center; gap:8px; font-size:12px; color:var(--mut); }
+  .meter { width:90px; height:6px; background:#eee; border-radius:4px; overflow:hidden; } .meter i { display:block; width:11%; height:100%; background:var(--acc); }
+  .av { width:28px; height:28px; border-radius:50%; background:#d9d4c7; display:grid; place-items:center; font-size:12px; font-weight:700; }
+  .wrap { display:grid; grid-template-columns: 1fr 300px; gap:18px; padding:18px 20px 22px; }
+  .ask { background:#fff; border:1px solid var(--line); border-radius:14px; padding:14px 16px; box-shadow:0 1px 2px rgba(0,0,0,.04); }
+  .ask .lbl { font-size:12px; color:var(--mut); margin-bottom:6px; }
+  .ask .field { display:flex; gap:10px; }
+  .ask .in { flex:1; border:1px solid var(--line); border-radius:10px; padding:10px 12px; font-size:15px; background:#fcfcfb; }
+  .btn { border-radius:10px; padding:10px 14px; font-weight:650; font-size:13px; border:1px solid var(--line); background:#fff; display:inline-flex; align-items:center; gap:6px; white-space:nowrap; }
+  .btn.pri { background:var(--ink); color:#fff; border-color:var(--ink); }
+  .btn.acc { background:var(--accbg); color:var(--acc); border-color:#cfe9da; }
+  .found { margin-top:8px; font-size:12px; color:var(--acc); }
+  .found span { background:var(--accbg); border-radius:20px; padding:2px 8px; margin-right:4px; }
+  .ideas { display:grid; grid-template-columns:repeat(3,1fr); gap:10px; margin:14px 0 4px; }
+  .idea { background:#fff; border:1px solid var(--line); border-radius:12px; padding:10px 12px; font-size:12.5px; }
+  .idea b { display:block; font-size:13px; margin-bottom:2px; } .idea .tag { font-size:11px; color:var(--acc); font-weight:650; text-transform:uppercase; letter-spacing:.4px; }
+  .sec { background:#fff; border:1px solid var(--line); border-radius:14px; padding:14px 16px; margin-top:12px; }
+  .sec h4 { margin:0 0 2px; font-size:14px; } .sec .hint { font-size:12px; color:var(--mut); margin-bottom:10px; }
+  .sec.newsec { border:1.5px solid #9fd6b7; box-shadow:0 0 0 4px #f0faf4; }
+  .badge { font-size:10.5px; font-weight:700; color:var(--acc); background:var(--accbg); border-radius:20px; padding:2px 7px; margin-left:6px; vertical-align:middle; }
+  .row { display:flex; gap:10px; flex-wrap:wrap; }
+  .tile { border:1.5px solid var(--line); border-radius:12px; padding:10px; width:118px; text-align:center; font-size:12.5px; background:#fff; }
+  .tile svg { width:56px; height:56px; } .tile small { display:block; color:var(--mut); font-size:11px; }
+  .tile.on { border-color:var(--ink); box-shadow:0 0 0 3px #e9e7e2; }
+  .sw { text-align:center; font-size:11px; color:var(--mut); width:58px; }
+  .sw i { display:block; width:38px; height:38px; border-radius:50%; margin:0 auto 4px; border:1px solid rgba(0,0,0,.12); }
+  .sw.on i { box-shadow:0 0 0 3px #fff, 0 0 0 5px var(--ink); } .sw.on { color:var(--ink); font-weight:650; }
+  .seg { display:inline-flex; border:1px solid var(--line); border-radius:10px; overflow:hidden; }
+  .seg span { padding:7px 12px; font-size:12.5px; border-right:1px solid var(--line); } .seg span:last-child { border-right:none; }
+  .seg span.on { background:var(--ink); color:#fff; }
+  .seg span.no { color:#b7b7bd; text-decoration:line-through; }
+  .slider { position:relative; height:6px; background:#eee; border-radius:4px; margin:16px 0 6px; } .slider i { position:absolute; left:0; top:0; height:6px; width:100%; background:var(--ink); border-radius:4px; }
+  .slider b { position:absolute; right:-7px; top:-6px; width:18px; height:18px; border-radius:50%; background:#fff; border:2px solid var(--ink); }
+  .sum { position:relative; }
+  .card { background:#fff; border:1px solid var(--line); border-radius:14px; padding:14px; box-shadow:0 1px 2px rgba(0,0,0,.04); }
+  .prev { height:150px; border-radius:10px; background:linear-gradient(#e9e8e4,#dcdad4); display:grid; place-items:center; color:var(--mut); font-size:12px; margin-bottom:12px; position:relative; }
+  .prev svg { width:92px; height:92px; }
+  .li { display:flex; justify-content:space-between; padding:6px 0; border-bottom:1px dashed var(--line); font-size:12.5px; }
+  .li span:first-child { color:var(--mut); } .li .ed { color:var(--acc); font-size:11px; margin-left:6px; }
+  .cost { display:flex; justify-content:space-between; align-items:baseline; margin:12px 0 4px; } .cost b { font-size:20px; }
+  .small { font-size:11.5px; color:var(--mut); }
+  .stack .btn { width:100%; justify-content:center; margin-top:8px; }
+  .disc { font-size:12px; color:var(--acc); margin-top:10px; }
+  .divider { margin:26px 0 10px; font-size:12px; text-transform:uppercase; letter-spacing:.6px; color:var(--mut); font-weight:700; }
+  /* results */
+  .steps { display:flex; gap:8px; align-items:center; font-size:12.5px; margin:4px 0 14px; flex-wrap:wrap; }
+  .st { padding:5px 10px; border-radius:20px; background:#fff; border:1px solid var(--line); }
+  .st.ok { background:var(--accbg); color:var(--acc); border-color:#cfe9da; } .st.now { background:var(--ink); color:#fff; border-color:var(--ink); }
+  .res { display:grid; grid-template-columns: 1fr 310px; gap:18px; }
+  .stage { background:#fff; border:1px solid var(--line); border-radius:14px; padding:12px; }
+  .big { height:330px; border-radius:10px; background:linear-gradient(#e7e5e0,#d8d5ce); display:grid; place-items:center; position:relative; }
+  .big svg { width:230px; height:230px; }
+  .box { position:absolute; border:2px solid var(--acc); border-radius:6px; }
+  .box em { position:absolute; top:-20px; left:0; font-style:normal; font-size:10.5px; background:var(--acc); color:#fff; padding:1px 6px; border-radius:4px; white-space:nowrap; }
+  .thumbs { display:flex; gap:8px; margin-top:10px; }
+  .th { width:64px; height:78px; border-radius:8px; background:#e2e0da; display:grid; place-items:center; font-size:10px; color:var(--mut); border:2px solid transparent; }
+  .th.on { border-color:var(--ink); }
+  .chk { display:flex; gap:8px; align-items:flex-start; padding:7px 0; border-bottom:1px solid #f0efeb; font-size:12.5px; }
+  .dot { width:18px; height:18px; border-radius:50%; background:var(--acc); color:#fff; font-size:11px; display:grid; place-items:center; flex:none; margin-top:1px; }
+  .dot.fix { background:#c98a12; }
+  .cap { font-size:11.5px; color:var(--mut); margin-top:8px; font-style:italic; }
+  .lib { display:grid; grid-template-columns:repeat(6,1fr); gap:10px; margin-top:12px; }
+  .lb { background:#fff; border:1px solid var(--line); border-radius:10px; padding:8px; font-size:11px; color:var(--mut); }
+  .lb div { height:84px; border-radius:6px; display:grid; place-items:center; margin-bottom:6px; background:#ecebe7; }
+  .lb svg { width:58px; height:58px; }
+  .filters { display:flex; gap:6px; flex-wrap:wrap; margin-top:8px; } .filters span { font-size:11.5px; border:1px solid var(--line); background:#fff; border-radius:20px; padding:3px 9px; }
+</style>
+
+<div class="ui">
+  <div class="top">
+    <div class="logo">CSC <b>Studio</b></div>
+    <div class="tabs"><a class="cur">Create image</a><a>Review</a><a>Library</a><a class="soon">Ads</a><a class="soon">Social</a><a class="soon">SEO</a><a>Brand kit</a></div>
+    <div class="pill">This month $1.01 of $9 <div class="meter"><i></i></div><div class="av">FS</div></div>
+  </div>
+
+  <div class="wrap">
+    <div>
+      <div class="ask">
+        <div class="lbl">What do you want to make?</div>
+        <div class="field"><div class="in">olive hoodie with something on the back</div><span class="btn acc">✦ Fill from my words</span></div>
+        <div class="found">Picked up: <span>✓ olive</span><span>✓ design on the back</span> · we'll ask about the rest</div>
+      </div>
+
+      <div class="ideas">
+        <div class="idea"><span class="tag">Missing on the site</span><b>A back print on a light colour</b>No light-colour back print yet. <u>Use this</u></div>
+        <div class="idea"><span class="tag">Good pairing</span><b>Olive with cream 3D puff</b>Raised cream on olive photographs well. <u>Use this</u></div>
+        <div class="idea"><span class="tag">Surprise me</span><b>A full random combination</b>Style, colour, design, model and scene. <u>Try it</u></div>
+      </div>
+
+      <div class="sec"><h4>Style</h4><div class="hint">Fits we make</div>
+        <div class="row">
+          <div class="tile"><svg fill="#5B5B3C"><use href="#h-classic"/></svg>Classic pullover<small>set-in shoulder</small></div>
+          <div class="tile on"><svg fill="#5B5B3C"><use href="#h-over"/></svg>Oversized pullover<small>dropped shoulder</small></div>
+          <div class="tile"><svg fill="#5B5B3C"><use href="#h-zip"/></svg>Full-zip<small>metal zip</small></div>
+        </div></div>
+
+      <div class="sec"><h4>Colour</h4><div class="hint">Samples only; customers can choose any colour. Add a hex for a custom one.</div>
+        <div class="row">
+          <div class="sw"><i style="background:#1C1C1E"></i>Black</div><div class="sw"><i style="background:#2F2F31"></i>Washed black</div><div class="sw"><i style="background:#9A9A9C"></i>Heather</div><div class="sw"><i style="background:#EDE6D6"></i>Cream</div><div class="sw"><i style="background:#C8B39A"></i>Sand</div><div class="sw on"><i style="background:#5B5B3C"></i>Olive</div><div class="sw"><i style="background:#2F4A3A"></i>Forest</div><div class="sw"><i style="background:#1F2A44"></i>Navy</div><div class="sw"><i style="background:#5A1F2B"></i>Burgundy</div><div class="sw"><i style="background:conic-gradient(red,yellow,lime,cyan,blue,magenta,red)"></i>Custom</div>
+        </div></div>
+
+      <div class="sec"><h4>Fabric weight</h4><div class="hint">Changes how the hoodie hangs in the picture</div>
+        <div class="seg"><span>320 · soft drape</span><span class="on">380 · gentle structure</span><span>450 · stands away from body</span></div></div>
+
+      <div class="sec"><h4>Shot</h4>
+        <div class="seg"><span>Product only</span><span class="on">On a model</span><span>Close-up of decoration</span></div></div>
+
+      <div class="sec newsec"><h4>Model <span class="badge">NEW · because you picked "on a model"</span></h4><div class="hint">Same four people across the site</div>
+        <div class="row">
+          <div class="tile"><div class="av" style="margin:4px auto 6px;width:44px;height:44px">A</div>Amir<small>hero, fit comparison</small></div>
+          <div class="tile on"><div class="av" style="margin:4px auto 6px;width:44px;height:44px">M</div>Maya<small>best for back prints</small></div>
+          <div class="tile"><div class="av" style="margin:4px auto 6px;width:44px;height:44px">L</div>Leo<small>zip, staff shots</small></div>
+          <div class="tile"><div class="av" style="margin:4px auto 6px;width:44px;height:44px">H</div>Hana<small>lifestyle</small></div>
+        </div></div>
+
+      <div class="sec newsec"><h4>Design on the back <span class="badge">NEW · from your words</span></h4>
+        <div class="row" style="margin-bottom:10px">
+          <div class="tile on" style="width:150px"><b style="font-size:15px;color:#c0563b">Static Bloom</b><small>sample design</small></div>
+          <div class="tile" style="width:150px"><b style="font-size:13px">HALVERN RUN CLUB</b><small>sample design</small></div>
+          <div class="tile" style="width:150px">⬆ Upload a logo<small>SVG, PDF or PNG</small></div>
+        </div>
+        <div class="seg"><span class="on">Screen print</span><span>Flat embroidery</span><span>3D puff</span></div>
+        <div style="margin-top:12px; font-size:12.5px">Size <b>30 cm</b> <span class="small">· full back maximum is 30 cm, so larger sizes are not offered</span></div>
+        <div class="slider"><i></i><b></b></div></div>
+
+      <div class="sec"><h4>Scene</h4>
+        <div class="seg"><span class="on">Concrete wall, daylight</span><span>Studio grey</span><span>Warm café</span><span>+ describe your own</span></div></div>
+    </div>
+
+    <div class="sum">
+      <div class="card">
+        <div class="prev"><svg fill="#5B5B3C"><use href="#h-over"/></svg><span style="position:absolute;bottom:8px" class="small">Sketch preview appears here</span></div>
+        <b>Your image</b>
+        <div class="li"><span>For</span><span>Website sample <span class="ed">edit</span></span></div>
+        <div class="li"><span>Hoodie</span><span>Oversized · olive · 380 <span class="ed">edit</span></span></div>
+        <div class="li"><span>Model</span><span>Maya, back view <span class="ed">edit</span></span></div>
+        <div class="li"><span>Design</span><span>Static Bloom · print · 30 cm <span class="ed">edit</span></span></div>
+        <div class="li"><span>Scene</span><span>Concrete wall, daylight <span class="ed">edit</span></span></div>
+        <div class="cost"><span class="small">Estimated cost</span><b>$0.13</b></div>
+        <div class="small">Premium model because it has a design · within budget</div>
+        <div class="stack">
+          <span class="btn acc">See 3 free sketches first</span>
+          <span class="btn pri">Approve & create</span>
+          <span class="btn">Make it in more colours…</span>
+        </div>
+        <div class="disc">▸ Show the full prompt</div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div class="divider">Screen 2 · after "Approve & create"</div>
+
+<div class="ui">
+  <div class="top">
+    <div class="logo">CSC <b>Studio</b></div>
+    <div class="tabs"><a>Create image</a><a class="cur">Review</a><a>Library</a><a class="soon">Ads</a><a class="soon">Social</a><a class="soon">SEO</a><a>Brand kit</a></div>
+    <div class="pill">This month $1.15 of $9 <div class="meter"><i style="width:13%"></i></div><div class="av">FS</div></div>
+  </div>
+  <div style="padding:16px 20px 22px">
+    <b style="font-size:16px">Olive oversized · Maya · Static Bloom on the back</b> <span class="small">· asked for by Faseeh · 2 min ago</span>
+    <div class="steps"><span class="st ok">✓ Sketches</span>→<span class="st ok">✓ Final</span>→<span class="st ok">✓ Checks · 1 fixed automatically</span>→<span class="st now">Your review</span>→<span class="st">Export</span></div>
+    <div class="res">
+      <div class="stage">
+        <div class="big"><svg fill="#5B5B3C"><use href="#h-over"/></svg>
+          <div class="box" style="left:44%;top:30%;width:12%;height:22%"><em>drawcords ✓</em></div>
+          <div class="box" style="left:36%;top:52%;width:28%;height:26%;border-color:#c98a12"><em style="background:#c98a12">print size fixed: 30 cm</em></div>
+        </div>
+        <div class="thumbs"><div class="th">sketch 1</div><div class="th on">sketch 2 ✓</div><div class="th">sketch 3</div><div class="th" style="background:#d6d3cc">before fix</div><div class="th on" style="background:#cfd9cf">final</div></div>
+      </div>
+      <div class="card">
+        <b>Checks</b>
+        <div class="chk"><span class="dot">✓</span><div>Colour matches olive #5B5B3C<div class="small">difference 2.1 (limit 5)</div></div></div>
+        <div class="chk"><span class="dot">✓</span><div>Design text reads "STATIC BLOOM"<div class="small">shape and ink colour match the file</div></div></div>
+        <div class="chk"><span class="dot fix">↻</span><div>Print size was 38 cm, fixed to 30 cm<div class="small">1 automatic repair · compare before/after</div></div></div>
+        <div class="chk"><span class="dot">✓</span><div>No stray text or other brands</div></div>
+        <div class="chk"><span class="dot">✓</span><div>Drawcords, cuffs, hood, hands<div class="small">AI check + please confirm by eye</div></div></div>
+        <div class="cap">Caption that goes with it: "AI model, concept render"</div>
+        <div class="stack">
+          <span class="btn pri">Approve</span>
+          <span class="btn">Ask for a change…</span>
+          <span class="btn">Reject with a note</span>
+        </div>
+        <div class="small" style="margin-top:8px">Cost so far $0.14 · record: spec, prompt, model, checks, who approved</div>
+      </div>
+    </div>
+
+    <div style="margin-top:20px"><b>Library</b> <span class="small">· approved images, ready for the website, ads and social</span>
+      <div class="filters"><span>Style ▾</span><span>Colour ▾</span><span>Technique ▾</span><span>Placement ▾</span><span>Model ▾</span><span>Packshot / on model ▾</span><span>⬇ Download web sizes</span></div>
+      <div class="lib">
+        <div class="lb"><div><svg fill="#2F2F31"><use href="#h-over"/></svg></div>Washed black · packshot</div>
+        <div class="lb"><div><svg fill="#2F2F31"><use href="#h-over"/></svg></div>Oakmere · 3D puff</div>
+        <div class="lb"><div><svg fill="#2F2F31"><use href="#h-classic"/></svg></div>Maya · front</div>
+        <div class="lb"><div><svg fill="#5B5B3C"><use href="#h-over"/></svg></div>Static Bloom · back</div>
+        <div class="lb"><div><svg fill="#EDE6D6"><use href="#h-zip"/></svg></div>Cream zip · missing</div>
+        <div class="lb"><div><svg fill="#1F2A44"><use href="#h-classic"/></svg></div>Navy · missing</div>
+      </div>
+    </div>
+  </div>
+</div>

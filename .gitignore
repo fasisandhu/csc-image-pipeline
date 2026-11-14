@@ -21,3 +21,6 @@ venv/
 
 # SpecStory chat transcripts
 .specstory/history/
+
+# Brainstorming companion mockups
+.superpowers/

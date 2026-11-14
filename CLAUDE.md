@@ -40,7 +40,7 @@ Full research (tools, limits, licences, prompts, workflow): https://claude.ai/ar
 
 - Gemini spend is funded by the $10/month Google AI Pro credit. Hard cap: $9.00 a month in code, with the budget alert set in Google Cloud.
 - Split: about $4 Nano Banana 2, about $6 Nano Banana Pro. Track estimated spend per call in `out/log.jsonl`.
-- Stop and ask me before any run estimated above $1, or any run that would cross the cap.
+- Stop and ask me or my teammate before any run estimated above $1, or any run that would cross the cap. Either of us can approve.
 - Cloudflare: stop at 9,500 neurons a day and queue the rest for the next day.
 - Never retry a failing call in a loop. Two failures, then stop and report.
 
@@ -182,7 +182,7 @@ Facts come from `catalogue/` and `brand/`, never invented. The spec references c
    - background clean-up for packshots;
    - colour correction;
    - upscale only if the slot needs more than 2K.
-10. **Approve:** contact sheet with specs; I approve or reject with a note. Rejection notes become new prompt rules.
+10. **Approve:** contact sheet with specs; I or my teammate approve or reject with a note. Rejection notes become new prompt rules.
 11. **Export:**
     - site images: WebP at 3 widths (1600, 800, 400), with alt text and the caption;
     - client mockups: one-page approval PDF.
@@ -206,7 +206,7 @@ Facts come from `catalogue/` and `brand/`, never invented. The spec references c
 
 - Client logos are never published unverified. Every logo either passes verification or is composited from the real vector file.
 - Every AI image on the site carries the concept-render caption; on-model images say "AI model".
-- Nothing is published, posted, sent or spent beyond the caps without my explicit approval.
+- Nothing is published, posted, sent or spent beyond the caps without explicit approval from me or my teammate.
 - Cloudflare drafts never go on the site.
 
 ## Build order

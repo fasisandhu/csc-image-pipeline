@@ -1,0 +1,18 @@
+{
+  "sections": [
+    {"id": "purpose", "title": "What is this for?", "hint": "Website images carry the concept-render caption; client mockups go to approval", "kind": "choice", "source": "static", "required": true,
+     "options": [{"id": "website", "label": "Website sample"}, {"id": "client", "label": "Client mockup"}]},
+    {"id": "catalogue", "title": "Fits we make", "hint": "Pick the hoodie style", "kind": "choice", "source": "catalogue", "required": true},
+    {"id": "colour", "title": "Colour", "hint": "Samples only; customers can choose any colour", "kind": "colour", "source": "palette", "required": true},
+    {"id": "gsm", "title": "Fabric weight", "hint": "Changes how the hoodie hangs in the picture", "kind": "choice", "source": "gsm", "required": true},
+    {"id": "recipe", "title": "Shot type", "hint": "What kind of picture to make", "kind": "choice", "source": "recipes", "required": true},
+    {"id": "cast", "title": "Model", "hint": "Our invented AI models; the same person keeps the same look", "kind": "choice", "source": "cast", "required": true, "show_if": {"recipe.model": true}},
+    {"id": "scene", "title": "Scene", "hint": "Where the model is shot", "kind": "choice", "source": "scenes", "required": true, "show_if": {"recipe.model": true}},
+    {"id": "decoration", "title": "Decoration", "hint": "Show a sample design on the hoodie, or keep it plain", "kind": "choice", "source": "static", "required": true,
+     "options": [{"id": "none", "label": "Plain, no decoration"}, {"id": "design", "label": "Sample design"}]},
+    {"id": "design", "title": "Sample design", "hint": "Invented brands only; each is drawn for dark or light garments", "kind": "choice", "source": "designs", "required": true, "show_if": {"decoration": "design"}},
+    {"id": "technique", "title": "Technique", "hint": "How the design is applied", "kind": "choice", "source": "technique", "required": true, "show_if": {"decoration": "design"}},
+    {"id": "placement", "title": "Placement", "hint": "Where on the garment; limited to what the shot shows", "kind": "choice", "source": "placement", "required": true, "show_if": {"decoration": "design"}},
+    {"id": "size_cm", "title": "Size (cm)", "hint": "Width of the design, up to the placement maximum", "kind": "size", "source": "size", "required": true, "show_if": {"decoration": "design"}}
+  ]
+}

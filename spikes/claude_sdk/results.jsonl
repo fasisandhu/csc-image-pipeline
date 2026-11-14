@@ -1,0 +1,13 @@
+{"check": "S1 subscription", "ok": true, "text": "ok", "seconds": 6.3, "cost_usd": 0.1482128, "structured": null}
+{"check": "S1b slim subscription", "ok": true, "text": "ok", "seconds": 3.7, "cost_usd": 0.0033640000000000002, "structured": null}
+{"check": "S2 plugin", "ok": true, "text": "finish-and-export\ngenerate-shots\nplan-shots\nqa-and-repair\nverify-logos", "seconds": 5.4, "cost_usd": 0.08413169999999999, "structured": null}
+{"check": "S3 image", "ok": true, "text": "{\"drawcords\": 2, \"metal_aglets\": true}", "seconds": 7.9, "cost_usd": 0.1459523, "structured": null}
+{"check": "S6 warm query: olive hoodie with something on the back", "ok": true, "seconds": 2.9, "structured": {"colour": "olive", "colour_word": "olive"}, "text": "{\"colour\":\"olive\",\"colour_word\":\"olive\"}"}
+{"check": "S6 warm query: a dark green staff hoodie for a cafe", "ok": true, "seconds": 1.8, "structured": {"colour": "forest-green", "colour_word": "dark green"}, "text": "{\"colour\":\"forest-green\",\"colour_word\":\"dark green\"}"}
+{"check": "S6 warm query: teal zip hoodie, heavy", "ok": true, "seconds": 1.5, "structured": {"colour": null, "colour_word": "teal"}, "text": "{\"colour\":null,\"colour_word\":\"teal\"}"}
+{"check": "S6 summary", "ok": true, "open_seconds": 1.5, "query_seconds": [1.5, 1.8, 2.9], "median": 1.8}
+{"check": "S4a invalid token (expect failure)", "ok": false, "error": "ResultError: Claude Code returned an error result: Failed to authenticate. API Error: 401 Invalid bearer token (exit code: 1)", "seconds": 6.5}
+{"check": "S4b real token", "ok": null, "error": "STUDIO_OWNER_CLAUDE_OAUTH_TOKEN not set in .env"}
+{"check": "S4a invalid token (expect failure)", "ok": false, "error": "ResultError: Claude Code returned an error result: Failed to authenticate. API Error: 401 Invalid bearer token (exit code: 1)", "seconds": 6.1}
+{"check": "S4b real token", "ok": true, "text": "ok", "seconds": 5.5, "cost_usd": 0.06901910000000001, "structured": null}
+{"check": "S5 api key", "ok": null, "error": "not tested: STUDIO_OWNER_ANTHROPIC_API_KEY not set"}

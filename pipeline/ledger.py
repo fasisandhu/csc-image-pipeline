@@ -49,6 +49,15 @@ def gemini_month_spend(tier: str | None = None) -> float:
     ), 5)
 
 
+def claude_month_spend(user: str) -> float:
+    """This month's billed Claude spend for one user (API-key calls; subscription calls record 0)."""
+    month = now().strftime("%Y-%m")
+    return round(sum(
+        e.get("cost_usd", 0.0) for e in entries()
+        if e.get("provider") == "claude" and e.get("user") == user and e["ts"].startswith(month)
+    ), 5)
+
+
 def cf_day_neurons() -> float:
     day = now().strftime("%Y-%m-%d")
     return round(sum(

@@ -12,7 +12,7 @@
     { id: 'create', label: 'Create image' },
     { id: 'clients', label: 'Clients', later: true },
     { id: 'review', label: 'Review' },
-    { id: 'library', label: 'Library', later: true },
+    { id: 'library', label: 'Library' },
     { id: 'brand', label: 'Brand kit', later: true },
     { id: 'ads', label: 'Ads', dim: true },
     { id: 'social', label: 'Social', dim: true },
@@ -162,7 +162,7 @@
     checking: 'The checks are running…',
     approved: 'Approved.',
     anchor: 'Saved as the reference packshot for this colour.',
-    rejected: 'Rejected. Your note is saved as a draft rule for future images; it stays off until someone switches it on.',
+    rejected: 'Rejected. Your note is saved as a draft rule for future images (see Rules from rejection notes, below); it stays off until someone switches it on.',
     checksStarted: 'The checks are running; this page updates by itself.',
     replace: 'A reference packshot already exists for this colour. Replace it?',
     builder: 'These are that image’s choices. Change what you like, then make it again.',
@@ -172,6 +172,39 @@
     running: 'A check or fix is running on this image; wait for it to finish.',
     noRepairs: 'No repairs are left on this image. Change your choices to make a new one.',
     noChanges: 'No fixes can be asked for on this image here. Change your choices to make a new one.',
+  };
+  // prompt rules: each rejection note is a pending rule with the AI's draft sentence; a person edits it, picks where
+  // it applies and switches it on (or dismisses it). Only a click on "Switch on" ever turns one on.
+  const RULE_WORDS_MAX = 40;  // studio.tasks.RULE_WORDS_MAX: the server refuses more
+  const RULE_NOTES = {
+    list: "Couldn't load the rules; check the studio is running.",
+    unreachable: "Couldn't reach the studio; check it is running, then try again.",
+    refused: "The studio couldn't do that. Try again in a moment.",
+    noDraft: 'No draft was made for this note; write the rule yourself.',
+    on: 'Switched on. From now on it is part of every prompt for ',
+    dismissed: 'Dismissed. This rule will not be used.',
+  };
+  // library: approved images with their record, filters built from the items present, and the web export
+  const FILTERS = [
+    { key: 'style', label: 'Style' }, { key: 'colour', label: 'Colour' }, { key: 'technique', label: 'Technique' },
+    { key: 'placement', label: 'Placement' }, { key: 'model', label: 'Model' }, { key: 'kind', label: 'Packshot / on model' },
+  ];
+  const KIND_WORDS = { packshot: 'Packshot', on_model: 'On model' };
+  const PURPOSE_WORDS = { website: 'Website sample', client: 'Client mockup' };
+  const MODEL_NAMES = { 'gemini-3.1-flash-image': 'Nano Banana 2 (standard)', 'gemini-3-pro-image': 'Nano Banana Pro (premium)' };
+  const COPY_MS = 4000;  // how long "Copied" stays on a copy button
+  const LIBRARY_NOTES = {
+    empty: 'No approved images yet — approve one in Review.',
+    none: 'No approved images match these filters.',
+    list: "Couldn't load the library; check the studio is running.",
+    unreachable: "Couldn't reach the studio; check it is running, then try again.",
+    refused: "The studio couldn't export this. Try again in a moment.",
+    gone: 'The image file is missing, so it cannot be exported.',
+    exported: 'Exported. The web files, alt text and caption are below.',
+    pdf: 'The approval PDF is ready below, with the web files.',
+    noPrompt: 'The prompt could not be rebuilt for this image.',
+    noFiles: 'No web sizes were made: the image is narrower than 400 px.',
+    left: 'The image you had open is no longer approved (rejected since, or its file is gone), so it left the Library.',
   };
 
   function plainObject(v) { return v && typeof v === 'object' && !Array.isArray(v) ? v : {}; }
@@ -295,12 +328,31 @@
   // puts back that item's older state
   let reviewTimer = null, reviewSeq = 0, reviewEpoch = 0, reviewFails = 0;
   const reviewActed = new Map();
+  // rules and library: the same sequencing. A list reply is used only if no newer list was asked for, and a list sent
+  // before an action's reply never puts back that rule's (or that export's) older state
+  let rulesSeq = 0, rulesEpoch = 0, librarySeq = 0, libraryEpoch = 0, copyTimer = null;
+  const rulesActed = new Map(), libraryActed = new Map();
 
   function busyReview(it) {
     return BUSY_REVIEW.has(it.review) || (Array.isArray(it.steps) && it.steps.some(s => BUSY_STEP.has(s.status)));
   }
   function smallMoney(n) { const v = Number(n) || 0; return v > 0 && v < 0.005 ? 'under $0.01' : money(v); }
   function fileName(p) { return String(p || '').split('/').pop(); }
+  function wordCount(t) { return String(t || '').split(/\s+/).filter(Boolean).length; }
+  function dateTime(iso) {  // an approval's day and time, e.g. "15 Nov, 14:05"
+    const d = new Date(iso);
+    if (Number.isNaN(d.getTime())) return '';
+    return d.toLocaleDateString([], { day: 'numeric', month: 'short' }) + ', '
+      + d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+  }
+  function selectText(el) {  // the copy fallback: the text is selected, for Ctrl+C
+    const sel = el && window.getSelection ? window.getSelection() : null;
+    if (!sel) return;
+    const range = document.createRange();
+    range.selectNodeContents(el);
+    sel.removeAllRanges();
+    sel.addRange(range);
+  }
   // The finished fix that made each of the chain's images (studio.library.chain_images skips a step with no output
   // and an output already listed, so position alone can shift): matched by its served output path, else by its file
   // name (a render the checks moved to out/reject keeps its name, but not its path). The first image, and one no
@@ -419,6 +471,16 @@
       // sizes: each image's own pixel size, to scale the check boxes drawn on it
       review: { items: [], loaded: false, error: '', lost: false, selected: null, view: null, busy: null, form: null,
                 picker: null, msg: null, announce: '', sizes: {}, broken: {}, stepsOpen: false },
+      // rules: from /api/rules (items in file order, scopes {value, label}). edits: {index: {text, scope, draft,
+      // draftScope}} what the person typed, kept across reloads; busy: {index, what} of the request in flight (one at a
+      // time); ask: the index whose Dismiss confirm is open; msg: {index, text, err}
+      rules: { items: [], scopes: [], loaded: false, error: '', edits: {}, busy: null, ask: null, msg: null },
+      // library: approved images from /api/library (newest approval first) and the filter values present among them.
+      // filters: {key: value or ''}; selected: the item in the record drawer; busy: {id, pdf} of the export in flight;
+      // msg: {id, text, err}; copied: {id, field, ok} the last copy button's answer; note: why an open record left
+      library: { items: [], facets: {}, loaded: false, error: '', filters: { style: '', colour: '', technique: '',
+                 placement: '', model: '', kind: '' }, selected: null, busy: null, msg: null, copied: null,
+                 promptOpen: false, broken: {}, announce: '', note: '' },
 
       init() {
         this.refreshBudget();
@@ -431,6 +493,7 @@
         this.loadQuestions().then(() => window.Alpine.nextTick(() => this.firstVisitTour()));
         this.loadJobs();
         this.loadReviews();  // the Review tab's count; checks still running are followed from here
+        this.loadRules();  // the Review tab's rules badge
         // polling pauses while the browser tab is hidden and catches up when it is shown again
         document.addEventListener('visibilitychange', () => {
           if (document.hidden) { clearTimeout(reviewTimer); reviewTimer = null; }
@@ -465,12 +528,21 @@
         if (tab.later) { this.ui.note = tab.label + ': coming in a later step.'; return; }
         this.ui.note = '';
         this.ui.tab = tab.id;
-        if (tab.id === 'review') this.reviewCheckAgain();  // coming back to the tab checks again, even after losing touch
+        if (tab.id === 'review') {  // coming back to the tab checks again, even after losing touch
+          this.reviewCheckAgain();
+          this.loadRules();
+        }
+        if (tab.id === 'library') this.libraryRetry();  // and any image that would not load is tried again
       },
       tabLabel(t) {  // Review counts the images waiting for a person
         const waiting = REVIEW_GROUPS[0].states;
         const n = t.id === 'review' ? this.review.items.filter(i => waiting.includes(i.review || null)).length : 0;
         return n ? t.label + ' (' + n + ')' : t.label;
+      },
+      goTab(id) { const t = TABS.find(x => x.id === id); if (t) this.openTab(t); },
+      tabBadge(t) {  // and, beside it, the rules waiting to be switched on
+        const n = t.id === 'review' ? this.pendingRules().length : 0;
+        return n ? n + (n === 1 ? ' rule' : ' rules') : '';
       },
       saveDraft() { storage.set('answers', this.answers); },
 
@@ -1684,7 +1756,13 @@
         const data = await this.sendVerdict(it, 'reject', { note }, REVIEW_NOTES.rejected);
         const draft = data && data.rule && typeof data.rule.prompt_text === 'string' ? data.rule.prompt_text.trim() : '';
         if (draft) this.review.msg.text += ' Draft: “' + draft + '”';
+        if (data) this.loadRules();  // its pending rule, in the rules panel
         return data;
+      },
+      isApproved(it) { return it.review === 'approved' || it.review === 'anchor'; },
+      openInLibrary(id) {  // "Open in Library" on an approved image: its record, where it is exported
+        Object.assign(this.library, { selected: id, msg: null, copied: null, promptOpen: false });
+        this.openTab(TABS.find(t => t.id === 'library'));
       },
       togglePicker(it) {
         Object.assign(this.review, { form: null, msg: null, picker: this.review.picker === it.id ? null : it.id });
@@ -1733,6 +1811,339 @@
           const card = document.getElementById('summary');
           if (shown(card)) card.focus({ preventScroll: true });
         }));
+      },
+
+      // --- prompt rules: the pending rules panel in the Review tab ------------------------------------
+      async loadRules() {
+        const seq = ++rulesSeq, since = rulesEpoch;
+        let res;
+        try {
+          res = await api('/api/rules');
+        } catch (e) {
+          if (seq === rulesSeq) this.rules.error = RULE_NOTES.list;
+          return;
+        }
+        if (seq !== rulesSeq) return;  // a newer list is on its way
+        const old = new Map(this.rules.items.map(r => [r.index, r]));
+        const items = (Array.isArray(res.rules) ? res.rules : []).filter(r => r && Number.isInteger(r.index))
+          .map(r => ((rulesActed.get(r.index) || 0) > since && old.has(r.index) ? old.get(r.index) : r));
+        const scopes = (Array.isArray(res.scopes) ? res.scopes : [])
+          .filter(s => s && typeof s.value === 'string' && s.value);
+        Object.assign(this.rules, { items, scopes, loaded: true, error: '' });
+        items.forEach(r => this.syncRuleEdit(r));
+      },
+      syncRuleEdit(r) {  // the field starts as the AI's draft; what the person typed is kept when the list reloads
+        if (r.status !== 'pending') { delete this.rules.edits[r.index]; return; }
+        const draft = typeof r.prompt_text === 'string' ? r.prompt_text : '';
+        const scope = this.knownScope(r.applies_to);
+        const e = this.rules.edits[r.index];
+        if (!e) { this.rules.edits[r.index] = { text: draft, scope, draft, draftScope: scope }; return; }
+        if (e.text === e.draft) e.text = draft;  // left alone: a newer draft replaces it
+        if (e.scope === e.draftScope) e.scope = scope;
+        Object.assign(e, { draft, draftScope: scope });
+      },
+      knownScope(v) { return this.rules.scopes.some(s => s.value === v) ? v : ''; },
+      putRule(rule) {  // an action's reply replaces that rule
+        rulesActed.set(rule.index, ++rulesEpoch);
+        const i = this.rules.items.findIndex(r => r.index === rule.index);
+        if (i >= 0) this.rules.items.splice(i, 1, rule);
+        else this.rules.items.push(rule);
+        this.syncRuleEdit(rule);
+      },
+      pendingRules() { return this.rules.items.filter(r => r.status === 'pending'); },
+      activeRules() { return this.rules.items.filter(r => r.status === 'active'); },
+      dismissedText() {
+        const n = this.rules.items.filter(r => r.status === 'dismissed').length;
+        return n ? n + (n === 1 ? ' rule was' : ' rules were') + ' dismissed and will not be used.' : '';
+      },
+      rulesBadge() { const n = this.pendingRules().length; return n ? n + ' waiting' : ''; },
+      scopeLabel(v) { const s = this.rules.scopes.find(x => x.value === v); return s ? s.label : String(v || ''); },
+      ruleEdit(r) { return this.rules.edits[r.index] || { text: '', scope: '', draft: '', draftScope: '' }; },
+      ruleText(r) { return this.ruleEdit(r).text; },
+      setRuleText(r, v) {
+        const e = this.rules.edits[r.index];
+        if (e) e.text = String(v);
+        this.clearRuleMsg(r);
+      },
+      setRuleScope(r, v) {
+        const e = this.rules.edits[r.index];
+        if (e) e.scope = this.knownScope(v);
+        this.clearRuleMsg(r);
+      },
+      clearRuleMsg(r) { const m = this.rules.msg; if (m && m.index === r.index) this.rules.msg = null; },
+      isScope(r, v) { return this.ruleEdit(r).scope === v; },
+      ruleWords(r) { return wordCount(this.ruleText(r)); },
+      ruleTooLong(r) { return this.ruleWords(r) > RULE_WORDS_MAX; },
+      ruleCountText(r) {
+        const n = this.ruleWords(r);
+        if (!n) return 'Write the rule as one sentence, up to ' + RULE_WORDS_MAX + ' words.';
+        if (n > RULE_WORDS_MAX) return n + ' words: keep it to ' + RULE_WORDS_MAX + ' or fewer.';
+        return n + ' of ' + RULE_WORDS_MAX + ' words';
+      },
+      ruleNoDraft(r) { return r.status === 'pending' && !String(r.prompt_text || '').trim() ? RULE_NOTES.noDraft : ''; },
+      ruleSource(r) {  // where the note came from: the rejected image, in plain words, when it is in the review list
+        const it = this.review.items.find(i => r.from_shot && i.shot_id === r.from_shot);
+        const day = new Date(String(r.date || '') + 'T12:00:00');  // a date only: shown as a day, never a time
+        const when = Number.isNaN(day.getTime()) ? '' : day.toLocaleDateString([], { day: 'numeric', month: 'short' });
+        return ['Note from a rejection', it ? it.words : '', when].filter(Boolean).join(' · ');
+      },
+      ruleBusy(r, what) { const b = this.rules.busy; return !!b && b.index === r.index && (!what || b.what === what); },
+      canSwitchOn(r) {
+        const n = this.ruleWords(r);
+        return this.rules.busy === null && r.status === 'pending' && n > 0 && n <= RULE_WORDS_MAX
+          && !!this.knownScope(this.ruleEdit(r).scope);
+      },
+      switchOnLabel(r) { return this.ruleBusy(r, 'activate') ? 'Switching on…' : 'Switch on'; },
+      ruleMsg(r) { const m = this.rules.msg; return m && m.index === r.index ? m : { text: '', err: false }; },
+      panelMsg() {  // an answer about a rule no longer waiting (switched on, dismissed, decided elsewhere)
+        const m = this.rules.msg;
+        if (!m || this.pendingRules().some(r => r.index === m.index)) return { text: '', err: false };
+        const r = this.rules.items.find(x => x.index === m.index);  // a refusal says which rule it is about
+        return m.err && r && r.note ? { err: true, text: 'The rule from “' + r.note + '”: ' + m.text } : m;
+      },
+      async ruleAct(r, what, body) {  // POST /api/rules/<index>/<what>; the reply's rule replaces this one
+        if (this.rules.busy !== null) return null;
+        const index = r.index;
+        Object.assign(this.rules, { busy: { index, what }, msg: null });
+        let res, data;
+        try {
+          res = await fetch('/api/rules/' + index + '/' + what, post(body));
+          data = plainObject(await res.json().catch(() => null));
+        } catch (e) {
+          this.rules.msg = { index, err: true, text: RULE_NOTES.unreachable };
+          return null;
+        } finally {
+          this.rules.busy = null;
+        }
+        const rule = plainObject(data.rule);
+        if (res.ok && Number.isInteger(rule.index)) {
+          this.putRule(rule);
+          return rule;
+        }
+        // 409 too long or decided elsewhere, 422 words or scope, 404 gone: the server's own words, in place
+        const said = typeof data.error === 'string' ? capital(data.error.trim()) : '';
+        this.rules.msg = { index, err: true, text: !said ? RULE_NOTES.refused : /[.!?]$/.test(said) ? said : said + '.' };
+        if (res.status === 409 || res.status === 404) this.loadRules();  // switched on or dismissed elsewhere
+        return null;
+      },
+      async switchOnRule(r) {  // the only way a rule is switched on: this button, pressed by a person
+        if (!this.canSwitchOn(r)) return null;
+        const e = this.ruleEdit(r), scope = e.scope;
+        this.rules.ask = null;
+        const rule = await this.ruleAct(r, 'activate', { prompt_text: e.text.trim(), applies_to: scope });
+        if (!rule) return null;
+        this.rules.msg = { index: rule.index, err: false, text: RULE_NOTES.on + this.scopeLabel(rule.applies_to).toLowerCase() + '.' };
+        this.focusRules();
+        return rule;
+      },
+      askDismiss(r) {  // Dismiss asks in place first
+        if (this.rules.busy !== null) return;
+        this.rules.ask = r.index;
+        this.clearRuleMsg(r);
+        window.Alpine.nextTick(() => { const b = document.getElementById('rule-dismiss-yes'); if (b) b.focus(); });
+      },
+      cancelDismiss(r) {
+        this.rules.ask = null;
+        window.Alpine.nextTick(() => { const b = document.getElementById('rule-dismiss-' + r.index); if (b) b.focus(); });
+      },
+      dismissOpen(r) { return this.rules.ask === r.index; },
+      async dismissRule(r) {
+        if (this.rules.ask !== r.index) return null;
+        const rule = await this.ruleAct(r, 'dismiss', {});
+        this.rules.ask = null;
+        if (!rule) return null;
+        this.rules.msg = { index: rule.index, err: false, text: RULE_NOTES.dismissed };
+        this.focusRules();
+        return rule;
+      },
+      focusRules() {  // after a rule leaves the waiting list, the keyboard goes to the panel's heading
+        window.Alpine.nextTick(() => { const h = document.getElementById('rules-title'); if (h) h.focus(); });
+      },
+      jumpToRules() {
+        const h = document.getElementById('rules-title');
+        if (!h) return;
+        h.scrollIntoView({ behavior: scrollMode(), block: 'start' });
+        h.focus({ preventScroll: true });
+      },
+      activeRuleMeta(r) {
+        return ['For ' + this.scopeLabel(r.applies_to).toLowerCase(), r.activated_by ? 'switched on by ' + r.activated_by : '']
+          .filter(Boolean).join(' · ');
+      },
+
+      // --- library: approved images, their record and the web export ----------------------------------
+      async loadLibrary() {
+        const seq = ++librarySeq, since = libraryEpoch;
+        let res;
+        try {
+          res = await api('/api/library');
+        } catch (e) {
+          if (seq === librarySeq) this.library.error = LIBRARY_NOTES.list;
+          return;
+        }
+        if (seq !== librarySeq) return;  // a newer list is on its way
+        this.library.note = '';
+        const old = new Map(this.library.items.map(i => [i.id, i]));
+        const items = (Array.isArray(res.items) ? res.items : []).filter(i => i && Number.isInteger(i.id))
+          .map(i => ((libraryActed.get(i.id) || 0) > since && old.has(i.id) ? { ...i, export: old.get(i.id).export } : i));
+        for (const i of items) {  // an image that changed may load now: it is tried again
+          const was = old.get(i.id);
+          if (was && was.image !== i.image && this.library.broken[i.image]) delete this.library.broken[i.image];
+        }
+        Object.assign(this.library, { items, facets: plainObject(res.facets), loaded: true, error: '' });
+        const f = this.library.filters;
+        for (const { key } of FILTERS) {  // a filter value no longer present is cleared, never left matching nothing
+          if (f[key] && !this.facetValues(key).some(v => v.value === f[key])) f[key] = '';
+        }
+        if (this.library.selected !== null && !items.some(i => i.id === this.library.selected)) {
+          // the record open in the drawer is no longer approved (rejected since, or its file is gone): say so
+          if (this.library.loaded && old.has(this.library.selected)) this.library.note = LIBRARY_NOTES.left;
+          this.library.selected = null;
+        }
+      },
+      libraryRetry() { this.library.broken = {}; this.loadLibrary(); },
+      libraryNote(key) { return LIBRARY_NOTES[key] || ''; },
+      facetValues(key) {
+        const list = this.library.facets[key];
+        return (Array.isArray(list) ? list : []).filter(v => v && typeof v.value === 'string' && v.value)
+          .map(v => ({ value: v.value, label: capital(String(v.label || v.value)) }));
+      },
+      shownFilters() { return FILTERS.filter(f => this.facetValues(f.key).length); },
+      isFilter(key, v) { return (this.library.filters[key] || '') === v; },
+      setFilter(key, v) {
+        if (!(key in this.library.filters)) return;
+        this.library.filters[key] = this.facetValues(key).some(x => x.value === v) ? v : '';
+      },
+      anyFilter() { return FILTERS.some(f => this.library.filters[f.key]); },
+      clearFilters() { for (const f of FILTERS) this.library.filters[f.key] = ''; },
+      shownLibrary() {
+        const f = this.library.filters;
+        return this.library.items.filter(i => FILTERS.every(({ key }) => !f[key] || i[key] === f[key]));
+      },
+      libraryCount() {
+        const all = this.library.items.length, n = this.shownLibrary().length;
+        if (!all) return '';
+        const word = c => c + (c === 1 ? ' approved image' : ' approved images');
+        return this.anyFilter() ? 'Showing ' + n + ' of ' + word(all) : word(all);
+      },
+      libraryEmpty() {
+        if (!this.library.loaded || this.library.error) return '';
+        if (!this.library.items.length) return LIBRARY_NOTES.empty;
+        return this.shownLibrary().length ? '' : LIBRARY_NOTES.none;
+      },
+      facetLabel(key, v) { const x = this.facetValues(key).find(o => o.value === v); return x ? x.label : capital(String(v || '')); },
+      tileTitle(it) {  // "Olive · Oversized Pullover Hoodie"
+        return [it.colour_name || this.facetLabel('colour', it.colour), this.facetLabel('style', it.style)].filter(Boolean).join(' · ');
+      },
+      tileSub(it) {  // "On model · Maya" / "Packshot", and the decoration: "3D puff embroidery · centre chest"
+        const kind = [KIND_WORDS[it.kind] || '', it.model || ''].filter(Boolean).join(' · ');
+        const deco = [capital(it.technique || ''), it.placement || ''].filter(Boolean).join(' · ');
+        return [kind, deco].filter(Boolean).join(' — ');
+      },
+      libraryHex(it) { return this.jobHex({ answers: { colour: it.colour } }); },
+      libraryThumb(it) { return it.image && !this.library.broken[it.image] ? [it.image] : []; },  // keyed: x-bind binds once
+      libraryBroken(path) { this.library.broken[path] = true; },
+      selectedRecord() { return this.library.items.find(i => i.id === this.library.selected) || null; },
+      selectedRecords() { const it = this.selectedRecord(); return it ? [it] : []; },  // x-for over it names the item
+      isRecord(it) { return this.library.selected === it.id; },
+      openRecord(it) {
+        Object.assign(this.library, { selected: it.id, msg: null, copied: null, promptOpen: false, note: '' });
+        window.Alpine.nextTick(() => {
+          const h = document.getElementById('lib-rec-title');
+          if (!h) return;
+          h.scrollIntoView({ behavior: scrollMode(), block: 'nearest' });
+          h.focus({ preventScroll: true });
+        });
+      },
+      closeRecord() {
+        const id = this.library.selected;
+        Object.assign(this.library, { selected: null, msg: null, copied: null, promptOpen: false });
+        window.Alpine.nextTick(() => { const b = document.getElementById('lib-tile-' + id); if (b) b.focus(); });
+      },
+      recordRows(it) {  // the record in plain words
+        const rows = [
+          { k: 'Shot', v: it.words },
+          { k: 'For', v: PURPOSE_WORDS[it.purpose] || '' },
+          { k: 'Approved by', v: [it.approved_by, dateTime(it.approved_at)].filter(Boolean).join(' · ') },
+          { k: 'Cost so far', v: smallMoney(it.cost_usd) },
+          { k: 'AI model', v: MODEL_NAMES[it.ai_model] || it.ai_model || '' },
+        ];
+        return rows.filter(r => r.v);
+      },
+      toggleLibraryPrompt() { this.library.promptOpen = !this.library.promptOpen; },
+      promptText(it) { return typeof it.prompt === 'string' && it.prompt ? it.prompt : LIBRARY_NOTES.noPrompt; },
+      isClient(it) { return it.purpose === 'client'; },
+      exportOf(it) { return it.export && typeof it.export === 'object' ? it.export : null; },
+      exportFiles(it) {  // the WebP sizes, widest first: "1600 px wide"
+        const ex = this.exportOf(it);
+        return (ex && Array.isArray(ex.files) ? ex.files : []).filter(f => f && typeof f.path === 'string' && f.path)
+          .map(f => ({ path: f.path, text: (Number.isInteger(f.width) ? f.width + ' px wide' : fileName(f.path)) + ' · WebP' }));
+      },
+      exportPdf(it) { const ex = this.exportOf(it); return ex && typeof ex.pdf === 'string' && ex.pdf ? [ex.pdf] : []; },
+      fileLink(path) { return { href: fileUrl(path), target: '_blank', rel: 'noopener noreferrer' }; },  // x-bind object
+      pdfLink(path) { return { href: fileUrl(path), download: fileName(path) }; },  // the server sends it as an attachment
+      exporting(it, pdf) { const b = this.library.busy; return !!b && b.id === it.id && (pdf === undefined || b.pdf === pdf); },
+      exportLabel(it) {
+        if (this.exporting(it, false)) return 'Exporting…';
+        return this.exportOf(it) ? 'Export for the website again' : 'Export for the website';
+      },
+      pdfLabel(it) {
+        if (this.exporting(it, true)) return 'Making the approval PDF…';
+        return this.exportPdf(it).length ? 'Approval PDF again' : 'Approval PDF';
+      },
+      libraryMsg(it) { const m = this.library.msg; return m && m.id === it.id ? m : { text: '', err: false }; },
+      async exportRecord(it, pdf) {  // POST /api/library/<id>/export: free, no AI call; one at a time
+        if (this.library.busy !== null) return null;
+        const id = it.id;
+        Object.assign(this.library, { busy: { id, pdf: !!pdf }, msg: null, copied: null });
+        let res, data;
+        try {
+          res = await fetch('/api/library/' + id + '/export', post({ pdf: !!pdf }));
+          data = await res.json().catch(() => null);
+        } catch (e) {
+          this.library.msg = { id, err: true, text: LIBRARY_NOTES.unreachable };
+          return null;
+        } finally {
+          this.library.busy = null;
+        }
+        if (res.ok && data && typeof data === 'object' && Array.isArray(data.files)) {
+          libraryActed.set(id, ++libraryEpoch);
+          const item = this.library.items.find(i => i.id === id);
+          if (item) item.export = data;
+          this.library.msg = { id, err: false, text: pdf ? LIBRARY_NOTES.pdf : LIBRARY_NOTES.exported };
+          return data;
+        }
+        const said = typeof plainObject(data).error === 'string' ? capital(data.error.trim()) : '';
+        let text = res.status === 404 ? LIBRARY_NOTES.gone : said || LIBRARY_NOTES.refused;
+        if (!/[.!?]$/.test(text)) text += '.';
+        this.library.msg = { id, err: true, text };
+        if (res.status === 404 || res.status === 409) this.loadLibrary();  // e.g. rejected since, or the file is gone
+        return null;
+      },
+      copyField(it, field) {  // the clipboard is written inside the click itself; if it refuses, the text is selected
+        const ex = this.exportOf(it);
+        const text = ex && typeof ex[field] === 'string' ? ex[field] : '';
+        const el = document.getElementById('lib-' + field + '-' + it.id);
+        const what = field === 'alt' ? 'Alt text' : 'Caption';
+        const answer = ok => {
+          clearTimeout(copyTimer);
+          this.library.copied = { id: it.id, field, ok };
+          this.library.announce = ok ? what + ' copied.' : what + ' selected: press Ctrl+C to copy it.';
+          copyTimer = setTimeout(() => { copyTimer = null; this.library.copied = null; }, COPY_MS);
+        };
+        const fallback = () => { selectText(el); answer(false); };
+        let done = null;
+        try {
+          if (navigator.clipboard && typeof navigator.clipboard.writeText === 'function') done = navigator.clipboard.writeText(text);
+        } catch (e) {
+          done = null;
+        }
+        if (!done || typeof done.then !== 'function') { fallback(); return; }
+        done.then(() => answer(true), fallback);
+      },
+      copyLabel(it, field) {
+        const c = this.library.copied;
+        if (!c || c.id !== it.id || c.field !== field) return 'Copy';
+        return c.ok ? 'Copied ✓' : 'Press Ctrl+C';
       },
     };
   }

@@ -762,7 +762,7 @@ def test_library_lists_only_approved_with_record(env, client):
     env.record({"event": "rejected", "file": undone.file, "shot_id": undone.sid, "by": "user", "note": "no"})
     g = env.final(PLAIN, user="teammate")               # one shared library
     post(client, g.id, "anchor")
-    teal = env.final({**PLAIN, "colour": {"name": "Teal", "hex": "#1F6F78"}})
+    teal = env.final({**PLAIN, "colour": {"name": "Teal", "hex": "#1F6F78"}, "purpose": "client"})
     post(client, teal.id, "approve")
 
     r = client.get("/api/library")
@@ -779,6 +779,8 @@ def test_library_lists_only_approved_with_record(env, client):
     assert item["approved_by"] == "owner" and item["approved_at"].startswith(ledger.now().date().isoformat())
     assert STYLE_BLOCK in item["prompt"] and item["reference"] is False and item["export"] is None
     assert items[g.id]["reference"] is True and items[e.id]["approved_by"] == "user"
+    # what it is for: the page offers the approval PDF for a client mockup only
+    assert item["purpose"] == "website" and items[teal.id]["purpose"] == "client"
     for leak in ("brand/", "out/specs", "refs/", "specs/"):
         assert leak not in r.text, leak
 

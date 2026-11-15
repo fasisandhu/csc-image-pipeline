@@ -24,7 +24,8 @@
       <template x-for="t in $store.studio.ui.tabs" :key="t.id">
         <a href="#" :class="{cur: $store.studio.ui.tab === t.id, soon: t.dim}"
            :aria-current="$store.studio.ui.tab === t.id ? 'page' : null"
-           @click.prevent="$store.studio.openTab(t)" x-text="$store.studio.tabLabel(t)"></a>
+           @click.prevent="$store.studio.openTab(t)"><span x-text="$store.studio.tabLabel(t)"></span> <span
+           class="tbadge" x-show="$store.studio.tabBadge(t)" x-text="$store.studio.tabBadge(t)"></span></a>
       </template>
     </nav>
     <div class="pill">
@@ -472,6 +473,8 @@
           </ul>
         </div>
       </template>
+      <button type="button" class="rules-jump" x-show="$store.studio.pendingRules().length" aria-controls="rules"
+              @click="$store.studio.jumpToRules()" x-text="'Rules waiting: ' + $store.studio.pendingRules().length + ' ↓'"></button>
     </section>
 
     <div class="rv-main">
@@ -559,6 +562,9 @@
                   <button type="button" class="btn" :id="'rv-ask-' + it.id" :aria-expanded="String($store.studio.pickerOpen(it))"
                           :aria-controls="'rv-picker-' + it.id" @click="$store.studio.togglePicker(it)">Ask for a change&hellip;</button>
                 </template>
+                <template x-if="$store.studio.isApproved(it)">
+                  <button type="button" class="btn acc" @click="$store.studio.openInLibrary(it.id)">Open in Library to export</button>
+                </template>
                 <template x-if="!$store.studio.isOpen(it)">
                   <button type="button" class="btn" @click="$store.studio.openInBuilder(it)">Change my choices</button>
                 </template>
@@ -628,6 +634,208 @@
             </div>
           </div>
         </article>
+      </template>
+
+      <!-- prompt rules: each rejection note waits here with the AI's draft sentence. Nothing is switched on except by
+           a person's click on "Switch on"; the server checks the words and that every prompt stays short enough -->
+      <section class="card rules" id="rules" aria-labelledby="rules-title">
+        <div class="rules-head">
+          <h2 class="rv-title" id="rules-title" tabindex="-1">Rules from rejection notes</h2>
+          <span class="badge" x-show="$store.studio.rulesBadge()" x-text="$store.studio.rulesBadge()"></span>
+        </div>
+        <p class="small">A rule is one sentence added to every prompt where it applies, so future images avoid the same
+          problem. A rejection note becomes a draft rule; it stays off until someone switches it on.</p>
+        <div class="small why lost" x-show="$store.studio.rules.error" role="status">
+          <span x-text="$store.studio.rules.error"></span>
+          <button type="button" class="btn retry" @click="$store.studio.loadRules()">Try again</button></div>
+        <p class="small" x-show="!$store.studio.rules.loaded && !$store.studio.rules.error">Loading&hellip;</p>
+        <p class="rv-msg" :class="{err: $store.studio.panelMsg().err}" role="status" aria-live="polite"
+           x-text="$store.studio.panelMsg().text"></p>
+
+        <h3 class="rv-gt">Waiting to be switched on</h3>
+        <p class="small" x-show="$store.studio.rules.loaded && !$store.studio.pendingRules().length">No rules waiting.</p>
+        <ul class="rule-list">
+          <template x-for="r in $store.studio.pendingRules()" :key="r.index">
+            <li class="rule" :aria-labelledby="'rule-note-' + r.index">
+              <p class="small" x-text="$store.studio.ruleSource(r)"></p>
+              <p class="rule-note" :id="'rule-note-' + r.index" x-text="'“' + r.note + '”'"></p>
+              <label class="lbl" :for="'rule-text-' + r.index">The rule, as it goes into the prompt (edit it if you like)</label>
+              <p class="small why" x-show="$store.studio.ruleNoDraft(r)" x-text="$store.studio.ruleNoDraft(r)"></p>
+              <textarea :id="'rule-text-' + r.index" rows="2" maxlength="400" :aria-describedby="'rule-count-' + r.index"
+                        :value="$store.studio.ruleText(r)" :disabled="$store.studio.ruleBusy(r)"
+                        @input="$store.studio.setRuleText(r, $event.target.value)"></textarea>
+              <p class="small rule-count" :id="'rule-count-' + r.index" :class="{why: $store.studio.ruleTooLong(r)}"
+                 x-text="$store.studio.ruleCountText(r)"></p>
+              <label class="lbl" :for="'rule-scope-' + r.index">Where it applies</label>
+              <select class="sel" :id="'rule-scope-' + r.index" :disabled="$store.studio.ruleBusy(r)"
+                      @change="$store.studio.setRuleScope(r, $event.target.value)">
+                <option value="" disabled :selected="!$store.studio.ruleEdit(r).scope">Pick where it applies</option>
+                <template x-for="s in $store.studio.rules.scopes" :key="s.value">
+                  <option :value="s.value" :selected="$store.studio.isScope(r, s.value)" x-text="s.label"></option>
+                </template>
+              </select>
+              <div class="pair rule-btns">
+                <button type="button" class="btn pri" :disabled="!$store.studio.canSwitchOn(r)"
+                        @click="$store.studio.switchOnRule(r)" x-text="$store.studio.switchOnLabel(r)"></button>
+                <button type="button" class="btn" :id="'rule-dismiss-' + r.index" :disabled="$store.studio.rules.busy !== null"
+                        :aria-expanded="String($store.studio.dismissOpen(r))" @click="$store.studio.askDismiss(r)">Dismiss&hellip;</button>
+              </div>
+              <template x-if="$store.studio.dismissOpen(r)">
+                <div class="panel-box" @keydown.escape.stop="$store.studio.cancelDismiss(r)">
+                  <p>Dismiss this rule? It will not be used, and it cannot be switched on later.</p>
+                  <div class="pair">
+                    <button type="button" class="btn pri" id="rule-dismiss-yes" :disabled="$store.studio.rules.busy !== null"
+                            @click="$store.studio.dismissRule(r)"
+                            x-text="$store.studio.ruleBusy(r, 'dismiss') ? 'Dismissing…' : 'Dismiss rule'"></button>
+                    <button type="button" class="btn" @click="$store.studio.cancelDismiss(r)">Keep it</button>
+                  </div>
+                </div>
+              </template>
+              <p class="rv-msg" :class="{err: $store.studio.ruleMsg(r).err}" role="status" aria-live="polite"
+                 x-text="$store.studio.ruleMsg(r).text"></p>
+            </li>
+          </template>
+        </ul>
+
+        <h3 class="rv-gt">Switched on</h3>
+        <p class="small" x-show="$store.studio.rules.loaded && !$store.studio.activeRules().length">No rules are switched on yet.</p>
+        <ul class="rule-list on">
+          <template x-for="r in $store.studio.activeRules()" :key="r.index">
+            <li class="rule"><p class="rule-text" x-text="r.prompt_text"></p>
+              <p class="small" x-text="$store.studio.activeRuleMeta(r)"></p></li>
+          </template>
+        </ul>
+        <p class="small" x-show="$store.studio.dismissedText()" x-text="$store.studio.dismissedText()"></p>
+      </section>
+    </div>
+  </main>
+
+  <!-- library (mockup screen 2's strip): approved images with their record, filters built from the items present,
+       and the web export. Exports are free (no AI call); the PDF is for client mockups -->
+  <main class="lib" x-show="$store.studio.ui.tab === 'library'" aria-labelledby="lib-title">
+    <p class="sr-only" aria-live="polite" x-text="$store.studio.library.announce"></p>
+    <div class="lib-head">
+      <h2 class="rv-title" id="lib-title">Library</h2>
+      <span class="small">approved images, ready for the website, ads and social</span>
+      <span class="small lib-count" x-text="$store.studio.libraryCount()"></span>
+    </div>
+    <div class="filters" role="group" aria-label="Filter the library" x-show="$store.studio.shownFilters().length">
+      <template x-for="f in $store.studio.shownFilters()" :key="f.key">
+        <label class="flt"><span x-text="f.label"></span>
+          <select class="sel" @change="$store.studio.setFilter(f.key, $event.target.value)">
+            <option value="" :selected="$store.studio.isFilter(f.key, '')">Any</option>
+            <template x-for="v in $store.studio.facetValues(f.key)" :key="v.value">
+              <option :value="v.value" :selected="$store.studio.isFilter(f.key, v.value)" x-text="v.label"></option>
+            </template>
+          </select></label>
+      </template>
+      <button type="button" class="ed" x-show="$store.studio.anyFilter()" @click="$store.studio.clearFilters()">Clear filters</button>
+    </div>
+    <div class="small why lost" x-show="$store.studio.library.error" role="status">
+      <span x-text="$store.studio.library.error"></span>
+      <button type="button" class="btn retry" @click="$store.studio.libraryRetry()">Try again</button></div>
+    <p class="small" x-show="!$store.studio.library.loaded && !$store.studio.library.error">Loading&hellip;</p>
+    <p class="rv-msg err" role="status" aria-live="polite" x-text="$store.studio.library.note"></p>
+
+    <div class="lib-wrap" :class="{open: $store.studio.selectedRecord()}">
+      <div class="lib-main">
+        <div class="lib-empty" x-show="$store.studio.libraryEmpty()">
+          <p x-text="$store.studio.libraryEmpty()"></p>
+          <button type="button" class="btn" x-show="!$store.studio.library.items.length"
+                  @click="$store.studio.goTab('review')">Open Review</button>
+          <button type="button" class="btn" x-show="$store.studio.library.items.length"
+                  @click="$store.studio.clearFilters()">Clear filters</button>
+        </div>
+        <ul class="lib-grid" aria-label="Approved images">
+          <template x-for="it in $store.studio.shownLibrary()" :key="it.id">
+            <li><button type="button" class="lb" :id="'lib-tile-' + it.id" :class="{cur: $store.studio.isRecord(it)}"
+                        :aria-current="$store.studio.isRecord(it) ? 'true' : null" aria-controls="lib-record"
+                        @click="$store.studio.openRecord(it)">
+              <span class="lb-img">
+                <template x-for="f in $store.studio.libraryThumb(it)" :key="f">
+                  <img x-bind="$store.studio.imgSrc(f)" alt="" @error="$store.studio.libraryBroken(f)">
+                </template>
+                <svg viewBox="0 0 100 100" aria-hidden="true" focusable="false" x-show="!$store.studio.libraryThumb(it).length"
+                     :fill="$store.studio.libraryHex(it)"><use x-bind="$store.studio.hoodie(it.style)"></use></svg>
+                <span class="ref-badge" x-show="it.reference">Reference packshot</span>
+              </span>
+              <span class="lb-title" x-text="$store.studio.tileTitle(it)"></span>
+              <small x-show="$store.studio.tileSub(it)" x-text="$store.studio.tileSub(it)"></small>
+              <small class="rj-cap" x-text="it.caption"></small>
+            </button></li>
+          </template>
+        </ul>
+      </div>
+
+      <!-- the record drawer: the image, its record, the prompt behind a disclosure, and the export -->
+      <template x-for="it in $store.studio.selectedRecords()" :key="it.id">
+        <aside class="card lib-rec" id="lib-record" aria-labelledby="lib-rec-title"
+               @keydown.escape="$store.studio.closeRecord()">
+          <div class="lib-rec-head">
+            <h3 id="lib-rec-title" tabindex="-1" x-text="$store.studio.tileTitle(it)"></h3>
+            <button type="button" class="btn close" @click="$store.studio.closeRecord()">Close</button>
+          </div>
+          <span class="ref-badge inline" x-show="it.reference">Reference packshot</span>
+          <div class="lib-rec-img">
+            <template x-for="f in $store.studio.libraryThumb(it)" :key="f">
+              <img x-bind="$store.studio.imgSrc(f)" :alt="it.words" @error="$store.studio.libraryBroken(f)">
+            </template>
+            <p class="small" x-show="!$store.studio.libraryThumb(it).length">This image file is not available.</p>
+          </div>
+          <p class="cap" x-text="it.caption"></p>
+          <dl class="rec">
+            <template x-for="row in $store.studio.recordRows(it)" :key="row.k">
+              <div class="li"><dt x-text="row.k"></dt><dd x-text="row.v"></dd></div>
+            </template>
+          </dl>
+          <button type="button" class="disc" aria-controls="lib-prompt" :aria-expanded="String($store.studio.library.promptOpen)"
+                  @click="$store.studio.toggleLibraryPrompt()"
+                  x-text="($store.studio.library.promptOpen ? '▾ Hide' : '▸ Show') + ' the full prompt'"></button>
+          <pre class="prompt" id="lib-prompt" x-show="$store.studio.library.promptOpen" x-text="$store.studio.promptText(it)"></pre>
+
+          <div class="exp">
+            <h4>Export</h4>
+            <p class="small">WebP files at 1600, 800 and 400 px wide (never wider than the image), with alt text and the
+              caption. Free: no AI call.</p>
+            <button type="button" class="btn pri wide" :disabled="$store.studio.library.busy !== null"
+                    @click="$store.studio.exportRecord(it, false)" x-text="$store.studio.exportLabel(it)"></button>
+            <template x-if="$store.studio.isClient(it)">
+              <div>
+                <button type="button" class="btn wide" :disabled="$store.studio.library.busy !== null"
+                        @click="$store.studio.exportRecord(it, true)" x-text="$store.studio.pdfLabel(it)"></button>
+                <p class="small">A one-page sheet for the client to sign, with the web files.</p>
+              </div>
+            </template>
+            <p class="rv-msg" :class="{err: $store.studio.libraryMsg(it).err}" role="status" aria-live="polite"
+               x-text="$store.studio.libraryMsg(it).text"></p>
+            <template x-if="$store.studio.exportOf(it)">
+              <div class="exp-out">
+                <h5>Web files <span class="small">(open in a new tab)</span></h5>
+                <ul class="files">
+                  <template x-for="f in $store.studio.exportFiles(it)" :key="f.path">
+                    <li><a x-bind="$store.studio.fileLink(f.path)" x-text="f.text"></a></li>
+                  </template>
+                </ul>
+                <p class="small" x-show="!$store.studio.exportFiles(it).length" x-text="$store.studio.libraryNote('noFiles')"></p>
+                <div class="copy">
+                  <div class="copy-head"><h5>Alt text</h5>
+                    <button type="button" class="btn copy-btn" @click="$store.studio.copyField(it, 'alt')"
+                            x-text="$store.studio.copyLabel(it, 'alt')"></button></div>
+                  <p class="copy-text" :id="'lib-alt-' + it.id" x-text="$store.studio.exportOf(it).alt"></p>
+                </div>
+                <div class="copy">
+                  <div class="copy-head"><h5>Caption</h5>
+                    <button type="button" class="btn copy-btn" @click="$store.studio.copyField(it, 'caption')"
+                            x-text="$store.studio.copyLabel(it, 'caption')"></button></div>
+                  <p class="copy-text" :id="'lib-caption-' + it.id" x-text="$store.studio.exportOf(it).caption"></p>
+                </div>
+                <template x-for="p in $store.studio.exportPdf(it)" :key="p">
+                  <a class="btn acc wide pdf" x-bind="$store.studio.pdfLink(p)">Download the approval PDF</a>
+                </template>
+              </div>
+            </template>
+          </div>
+        </aside>
       </template>
     </div>
   </main>

@@ -420,6 +420,7 @@ def library_item(job: dict, steps: list[dict]) -> dict | None:
     return {
         "id": job["id"], "shot_id": ((job.get("spec") or {}).get("shot") or {}).get("shot_id"),
         "words": shot_words(job), "caption": caption_for(job.get("answers")), "image": served(latest),
+        "purpose": (job.get("answers") or {}).get("purpose"),  # "website" or "client": a client mockup gets a PDF
         **facts, "ai_model": entry.get("model"),
         "reference": _is_reference(job, latest),
         "cost_usd": cost_so_far(job, steps),

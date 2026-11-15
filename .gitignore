@@ -27,3 +27,6 @@ venv/
 
 # Browser-tool logs and snapshots (Playwright MCP)
 .playwright-mcp/
+
+# Live prompt rules written by the studio (may hold client-work notes; repo is public)
+brand/prompt_rules.json

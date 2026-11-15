@@ -271,14 +271,16 @@
     </div>
     <div class="sum">
       <section class="card summary" id="summary" tabindex="-1" aria-labelledby="sum-title">
-        <!-- the big preview: the watched job's finished final, else the chosen sketch, else the drawing -->
+        <!-- the big preview: the watched job's finished final, else the chosen sketch, else the drawing.
+             Keyed lists of one: Alpine binds an x-bind object once, so a new file or style needs a new element -->
         <div class="prev" :class="{shot: $store.studio.shownImage()}">
-          <template x-if="$store.studio.shownImage()">
-            <img x-bind="$store.studio.imgSrc($store.studio.shownImage().file)" :alt="$store.studio.shownImage().alt">
+          <template x-for="f in $store.studio.shownFiles()" :key="f">
+            <img x-bind="$store.studio.imgSrc(f)" :alt="$store.studio.shownImage().alt">
           </template>
-          <svg class="prev-h" viewBox="0 0 100 100" aria-hidden="true" focusable="false"
-               x-show="!$store.studio.shownImage() && $store.studio.answers.catalogue"
-               :fill="$store.studio.colourHex()"><use x-bind="$store.studio.hoodie($store.studio.answers.catalogue)"></use></svg>
+          <template x-for="c in $store.studio.drawnStyle()" :key="c">
+            <svg class="prev-h" viewBox="0 0 100 100" aria-hidden="true" focusable="false"
+                 :fill="$store.studio.colourHex()"><use x-bind="$store.studio.hoodie(c)"></use></svg>
+          </template>
           <span class="small prev-note" x-show="!$store.studio.shownImage()">Sketch preview appears here</span></div>
         <template x-if="$store.studio.shownImage()">
           <div class="prev-text">
@@ -415,8 +417,8 @@
             <li><button type="button" class="rj" :class="{cur: $store.studio.watching === j.id}"
                         :aria-current="$store.studio.watching === j.id ? 'true' : null" @click="$store.studio.watchJob(j)">
               <span class="rj-th">
-                <template x-if="$store.studio.jobThumb(j)">
-                  <img x-bind="$store.studio.imgSrc($store.studio.jobThumb(j))" alt="">
+                <template x-for="f in $store.studio.thumbFiles(j)" :key="f">
+                  <img x-bind="$store.studio.imgSrc(f)" alt="">
                 </template>
                 <svg viewBox="0 0 100 100" aria-hidden="true" focusable="false" x-show="!$store.studio.jobThumb(j)"
                      :fill="$store.studio.jobHex(j)"><use x-bind="$store.studio.hoodie(j.answers && j.answers.catalogue)"></use></svg>

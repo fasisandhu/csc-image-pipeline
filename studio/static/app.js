@@ -1179,6 +1179,7 @@
         return o && HEX_RE.test(o.sub) ? o.sub : NO_COLOUR;
       },
       jobThumb(j) { const f = jobFiles(j); return j.status === 'done' && f.length ? f[0] : ''; },
+      thumbFiles(j) { const f = this.jobThumb(j); return f ? [f] : []; },  // keyed: x-bind objects bind once
       canChoose(j) { return j.kind === 'drafts' && j.status === 'done' && !!j.shot_id && j.shot_id === this.currentShot(); },
       isChosen(f) { return !!this.chosen && this.chosen.file === f; },
       choose(j, f, i) {  // a second click on the chosen sketch un-picks it
@@ -1190,6 +1191,10 @@
       sketchAlt(j, i) { return 'Sketch ' + (i + 1) + ' of ' + this.jobWords(j); },
       sketchHint(j) { return this.canChoose(j) ? JOB_NOTES.pick : JOB_NOTES.otherShot; },
       finalNote(j) { return this.isAnchor(j) ? JOB_NOTES.anchorDone : JOB_NOTES.review; },
+      // the big preview's image and drawing as keyed lists of one: Alpine evaluates an x-bind object once,
+      // so a new file or style must make a new element (else the old src or shape would stay)
+      shownFiles() { const s = this.shownImage(); return s ? [s.file] : []; },
+      drawnStyle() { const c = this.answers.catalogue; return !this.shownImage() && typeof c === 'string' && c ? [c] : []; },
       shownImage() {  // the big preview box: the watched job's finished final, else the chosen sketch
         const w = this.watchedJob();
         if (w && w.kind === 'final' && w.status === 'done' && jobFiles(w).length) {

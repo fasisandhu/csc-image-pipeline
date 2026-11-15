@@ -438,3 +438,21 @@ def test_over_one_dollar_409_says_needs_confirm(client, monkeypatch):
         **est, "action": "stop", "reason": "monthly cap reached"})
     r = client.post("/api/jobs", json={"answers": OAKMERE, "kind": "final", "confirm": True})
     assert r.status_code == 409 and "needs_confirm" not in r.json()
+
+
+# --- task 8 fix: x-bind objects are bound once ------------------------------------------------
+def test_x_bind_objects_use_only_values_fixed_for_their_element():
+    """Alpine evaluates the object form of x-bind once, when the element is made. So its argument may only
+    be a loop variable (fixed for that element), never store state that changes while the element lives:
+    the big preview kept the chosen sketch's src under the "Final image" label, and its drawing kept its
+    first style. A changing image or drawing is a keyed x-for, so a new value makes a new element."""
+    import re
+    html = (STATIC / "index.html").read_text(encoding="utf-8")
+    binds = re.findall(r'x-bind="([^"]*)"', html)
+    assert binds
+    for b in binds:
+        args = re.fullmatch(r"\$store\.studio\.\w+\((.*)\)", b)
+        assert args, b
+        assert "$store" not in args.group(1), b
+    assert 'x-for="f in $store.studio.shownFiles()" :key="f"' in html
+    assert 'x-for="c in $store.studio.drawnStyle()" :key="c"' in html

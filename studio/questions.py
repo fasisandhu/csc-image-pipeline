@@ -18,7 +18,11 @@ QDIR = Path(__file__).parent / "questions"
 HEX_RE = re.compile(r"#[0-9A-Fa-f]{6}")
 NO_MAX = "max size not set yet"
 NEEDS_DESIGN = "a close-up needs a design"
-MAX_COLOUR_NAME = 40  # the name becomes part of file names: keep paths short after a paid call
+# A custom colour name becomes part of file names (short paths after a paid call) and of every prompt of the shot
+# (no prompt past 220 words): at most this many characters, and no more words than the longest palette name.
+MAX_COLOUR_NAME = 24
+NO_NAME = "Give the colour a name."
+BAD_HEX = "The hex code is # and six characters from 0-9 and A-F, such as #1F6F78."
 
 
 @dataclass
@@ -83,10 +87,28 @@ def _tone(colour) -> str | None:
         return None
 
 
+def _palette_words() -> tuple[int, str]:
+    """The most words in a palette colour's name (brand/palette.json), and the first name that long."""
+    names = [c["name"] for c in load_json("brand/palette.json")["colours"].values()]
+    most = max(len(n.split()) for n in names)
+    return most, next(n for n in names if len(n.split()) == most)
+
+
+def custom_colour_problem(v) -> str | None:
+    """Why a custom colour {"name", "hex"} cannot be used, in plain words for the page; None when it can."""
+    if not isinstance(v, dict) or not isinstance(v.get("name"), str) or not v["name"].strip():
+        return NO_NAME
+    most, example = _palette_words()
+    if len(v["name"].split()) > most or len(v["name"].strip()) > MAX_COLOUR_NAME:
+        return (f"Keep the colour name to {most} words and {MAX_COLOUR_NAME} characters at most, "
+                f"like “{example}”.")
+    if not isinstance(v.get("hex"), str) or not HEX_RE.fullmatch(v["hex"]):
+        return BAD_HEX
+    return None
+
+
 def _valid_custom_colour(v) -> bool:
-    return (isinstance(v, dict) and isinstance(v.get("name"), str) and bool(v["name"].strip())
-            and len(v["name"]) <= MAX_COLOUR_NAME
-            and isinstance(v.get("hex"), str) and bool(HEX_RE.fullmatch(v["hex"])))
+    return custom_colour_problem(v) is None
 
 
 def _visible(sec: dict, answers: dict, recipes: dict) -> bool:

@@ -56,7 +56,7 @@
   const HIDE_SUB = new Set(['recipe']);  // a shot's sub ("on-model") repeats its label
   const HEX_RE = /^#[0-9A-Fa-f]{6}$/;
   const SIZE_KEYS = new Set(['ArrowRight', 'ArrowUp', 'ArrowLeft', 'ArrowDown', 'Home', 'End', 'PageUp', 'PageDown']);
-  const MAX_COLOUR_NAME = 40;
+  const MAX_COLOUR_NAME = 40;  // the name field's length guard; the server judges the name (words and characters)
   const NO_COLOUR = '#8d8d94';  // hoodie drawings before a colour is picked
   const NOTES = {
     options: "Couldn't load the options; check the studio is running.",
@@ -440,7 +440,8 @@
       builder: {
         loaded: false, error: '', previewError: '', announce: '',
         seen: null, fresh: [], byWords: [], tips: {},
-        custom: { open: false, name: '', hex: '', hint: '' },  // hint: a colour word from the brief
+        // hint: a colour word from the brief; problem: the server's words for a custom colour it refused
+        custom: { open: false, name: '', hex: '', hint: '', problem: '' },
         waiting: false,  // answers changed and the options or cost are not back yet
         // active: the section in use (the last one the person acted in, or opened with Change); it stays
         // open while answered sections fold. showAll: "Show all options" (this visit only)
@@ -714,6 +715,8 @@
         if (seq !== questionsSeq || questionsTimer) return;  // newer answers are on their way
         this.builder.error = '';
         this.applySections(res, sent);
+        const said = plainObject(res.problems).colour;  // e.g. a custom colour name that is too long
+        this.builder.custom.problem = typeof said === 'string' ? said : '';
         if (briefJump !== null) {  // words were just filled in: go to what is still missing
           const due = briefJump === touchSeq;
           briefJump = null;
@@ -884,7 +887,6 @@
       customProblem() {
         const c = this.builder.custom;
         if (!c.name.trim()) return 'Give the colour a name.';
-        if (c.name.length > MAX_COLOUR_NAME) return 'Keep the name to ' + MAX_COLOUR_NAME + ' characters.';
         if (!HEX_RE.test(c.hex)) return 'The hex code is # and six characters from 0-9 and A-F, such as #1F6F78.';
         return '';
       },
@@ -897,7 +899,7 @@
       customMessage() {  // the line under the custom fields: what is wrong, unless the brief's note says it
         if (!this.customTouched()) return '';
         if (this.customHint() && this.builder.custom.hex === '') return '';
-        return this.customProblem();
+        return this.customProblem() || this.builder.custom.problem;  // the server's words, as they are
       },
       customSwatch() { const h = this.builder.custom.hex; return HEX_RE.test(h) ? h : 'transparent'; },
       applyCustom() {  // a valid custom colour is the answer; until then there is no colour answer

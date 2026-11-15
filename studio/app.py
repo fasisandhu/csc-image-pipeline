@@ -32,7 +32,7 @@ from . import db, guide, library
 from .brain import BrainError, get_brain
 from .identity import current_user
 from .notes import plain_warnings
-from .questions import missing, resolve, valid_value
+from .questions import custom_colour_problem, missing, resolve, valid_value
 from .tasks import draft_rule, read_brief, rule_scopes, rule_words
 from .worker import routes_for
 
@@ -185,17 +185,23 @@ def _normal(answers: dict) -> dict:
 
 
 def checked(answers: dict) -> dict:
-    """Complete answers, every one a valid choice; otherwise BadAnswers naming the first field that is not."""
+    """Complete answers, every one a valid choice; otherwise BadAnswers naming the first field that is not (a custom
+    colour says what is wrong with it, in plain words)."""
     for k, v in answers.items():  # types first: the question resolver expects scalars
         if not _type_ok(k, v):
             raise BadAnswers(f"invalid answer for {k}")
     for k, v in answers.items():
         if not valid_value(k, v, answers):
-            raise BadAnswers(f"invalid answer for {k}")
+            raise BadAnswers(_custom_problem(k, v) or f"invalid answer for {k}")
     gaps = missing(answers)
     if gaps:
         raise BadAnswers(f"missing answers: {', '.join(gaps)}")
     return _normal(answers)
+
+
+def _custom_problem(key: str, value) -> str | None:
+    """What is wrong with a custom colour answer, in plain words; None for any other answer."""
+    return custom_colour_problem(value) if key == "colour" and isinstance(value, dict) else None
 
 
 def usable(answers: dict) -> dict:
@@ -343,8 +349,13 @@ def health():
 
 @app.post("/api/questions")
 def questions(body: AnswersIn):
+    """The sections for the answers so far. An invalid answer is dropped; a custom colour that is dropped says why
+    in `problems`, and the page shows those words as they are."""
     answers = usable(body.answers)
-    return {"sections": [asdict(s) for s in resolve(answers)], "missing": missing(answers)}
+    colour = body.answers.get("colour")
+    said = _custom_problem("colour", colour) if _type_ok("colour", colour) and "colour" not in answers else None
+    return {"sections": [asdict(s) for s in resolve(answers)], "missing": missing(answers),
+            "problems": {"colour": said} if said else {}}
 
 
 @app.post("/api/brief")

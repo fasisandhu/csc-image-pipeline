@@ -461,3 +461,28 @@ def test_same_origin_posts_pass(client, headers):
     assert client.post("/api/rules/0/dismiss", headers=headers).status_code == 404  # reached the route: no rule 0
     r = client.post("/api/jobs", headers=headers, json={"answers": OAKMERE})
     assert r.status_code == 201, r.text
+
+
+# --- custom colour names (final review T4) -----------------------------------------------------------
+def test_long_custom_colour_name_refused_in_plain_words(client):
+    from studio.questions import custom_colour_problem
+
+    long = {"name": "Deep Ocean Teal", "hex": "#1F6F78"}
+    said = custom_colour_problem(long)
+    assert said and "invalid" not in said
+    for url in ("/api/preview", "/api/jobs"):
+        r = client.post(url, json={"answers": {**OAKMERE, "colour": long}})
+        assert (r.status_code, r.json()) == (422, {"error": said}), url
+    assert job_count() == 0
+    r = client.post("/api/questions", json={"answers": {**OAKMERE, "colour": long}})
+    body = r.json()
+    assert r.status_code == 200 and body["problems"] == {"colour": said} and "colour" in body["missing"]
+    ok = client.post("/api/questions", json={"answers": {**OAKMERE, "colour": {"name": "Ocean Teal", "hex": "#1F6F78"}}})
+    assert ok.json()["problems"] == {} and "colour" not in ok.json()["missing"]
+
+
+def test_page_shows_the_servers_words_for_a_custom_colour():
+    """The page does not judge the name's length itself: it shows the server's `problems.colour` as it is."""
+    js = (Path(app_mod.STATIC_DIR) / "app.js").read_text(encoding="utf-8")
+    assert "plainObject(res.problems).colour" in js and "this.builder.custom.problem" in js
+    assert "Keep the name to" not in js and "c.name.length >" not in js

@@ -226,7 +226,8 @@ class Worker:
 
     @staticmethod
     def _spent(before: int) -> float:
-        """Cost logged since entry `before`: the step's own calls (the worker runs one step at a time)."""
+        """Cost logged since entry `before`: the step's own calls, since the worker runs one step at a time.
+        A call a request thread logs in the same moment (a brief, say) would be counted here too."""
         return round(sum(e.get("cost_usd") or 0.0 for e in ledger.entries()[before:]), 6)
 
     def _step(self, conn, step: dict, job: dict) -> Outcome:

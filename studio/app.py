@@ -22,7 +22,7 @@ from pydantic import BaseModel, Field, StrictBool
 from pipeline import ledger
 from pipeline.compile import ROOT, CompileError, compile_spec, load_json
 from pipeline.providers import ProviderError
-from pipeline.specs import build_spec, find_anchor
+from pipeline.specs import build_spec, find_anchor, load_recipes
 
 from . import db, guide
 from .brain import BrainError, get_brain
@@ -139,11 +139,19 @@ def file_names_only(text: str) -> str:
     return FOLDERS.sub("", text)
 
 
+def caption_for(answers: dict) -> str:
+    """The caption every displayed image carries (brand.json): the on-model one when the shot has a model."""
+    captions = load_json("brand/brand.json")["captions"]
+    recipe = load_recipes()["recipes"].get((answers or {}).get("recipe")) or {}
+    return captions["on_model"] if recipe.get("model") is True else captions["concept_render"]
+
+
 def public_job(job: dict) -> dict:
     """A job as the browser gets it. The spec stays in the database (it holds repo paths such as
     refs/anchors/ and brand/designs/); its shot id comes instead, and the error loses its folders."""
     out = {k: v for k, v in job.items() if k != "spec"}
     out["shot_id"] = ((job.get("spec") or {}).get("shot") or {}).get("shot_id")
+    out["caption"] = caption_for(job.get("answers"))
     if out.get("error"):
         out["error"] = file_names_only(out["error"])
     return out
@@ -242,9 +250,10 @@ def create_job(body: JobIn, user: str = Depends(current_user)):
     est = estimate(spec, body.kind, [layout] if layout else [])
     if est["action"] != "run":
         return JSONResponse({"error": est["reason"] or f"route is {est['action']!r}"}, 409)
-    if est["base_usd"] > ledger.RUN_APPROVAL_USD and not body.confirm:
+    if est["base_usd"] > ledger.RUN_APPROVAL_USD and not body.confirm:  # the page asks in-page, then resends
         return JSONResponse({"error": f"estimated ${est['base_usd']:.2f} is over "
-                                      f"${ledger.RUN_APPROVAL_USD:.2f}; confirm to run"}, 409)
+                                      f"${ledger.RUN_APPROVAL_USD:.2f}; confirm to run",
+                             "needs_confirm": True, "estimate_usd": est["base_usd"]}, 409)
     with closing(db.connect()) as conn:
         job_id = db.create_job(conn, user, body.kind, answers, spec, est,
                                confirmed_by=user if body.confirm else None, layout=layout)

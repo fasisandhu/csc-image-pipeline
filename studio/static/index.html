@@ -207,10 +207,22 @@
     </div>
     <div class="sum">
       <section class="card summary" aria-labelledby="sum-title">
-        <div class="prev">
-          <svg class="prev-h" viewBox="0 0 100 100" aria-hidden="true" focusable="false" x-show="$store.studio.answers.catalogue"
+        <!-- the big preview: the watched job's finished final, else the chosen sketch, else the drawing -->
+        <div class="prev" :class="{shot: $store.studio.shownImage()}">
+          <template x-if="$store.studio.shownImage()">
+            <img x-bind="$store.studio.imgSrc($store.studio.shownImage().file)" :alt="$store.studio.shownImage().alt">
+          </template>
+          <svg class="prev-h" viewBox="0 0 100 100" aria-hidden="true" focusable="false"
+               x-show="!$store.studio.shownImage() && $store.studio.answers.catalogue"
                :fill="$store.studio.colourHex()"><use x-bind="$store.studio.hoodie($store.studio.answers.catalogue)"></use></svg>
-          <span class="small prev-note">Sketch preview appears here</span></div>
+          <span class="small prev-note" x-show="!$store.studio.shownImage()">Sketch preview appears here</span></div>
+        <template x-if="$store.studio.shownImage()">
+          <div class="prev-text">
+            <p class="small prev-label" x-text="$store.studio.shownImage().label"></p>
+            <p class="cap" x-text="$store.studio.shownImage().caption"></p>
+            <p class="small next" x-show="$store.studio.shownImage().note" x-text="$store.studio.shownImage().note"></p>
+          </div>
+        </template>
         <h2 class="sum-title" id="sum-title">Your image</h2>
         <template x-for="s in $store.studio.summaryRows()" :key="s.id">
           <div class="li"><span x-text="$store.studio.rowLabel(s)"></span>
@@ -240,10 +252,6 @@
                   aria-label="Notes about this image">
                 <template x-for="(w, i) in ($store.studio.preview.warnings || [])" :key="i"><li x-text="w"></li></template>
               </ul>
-              <button type="button" class="disc" aria-controls="full-prompt" :aria-expanded="String($store.studio.ui.promptOpen)"
-                      @click="$store.studio.togglePromptBox()"
-                      x-text="($store.studio.ui.promptOpen ? '▾ Hide' : '▸ Show') + ' the full prompt'"></button>
-              <pre class="prompt" id="full-prompt" x-show="$store.studio.ui.promptOpen" x-text="$store.studio.preview.prompt"></pre>
             </div>
           </template>
           <p class="small" x-show="!$store.studio.preview && !$store.studio.builder.waiting && $store.studio.missing.length">
@@ -251,11 +259,110 @@
           </div>
         </div>
         <p class="small why" x-show="$store.studio.builder.previewError" x-text="$store.studio.builder.previewError" role="status"></p>
+
+        <!-- sketches are free (Cloudflare) and never published; approve & create makes the paid final -->
+        <div class="stack">
+          <button type="button" class="btn acc" :disabled="!$store.studio.canSketch()"
+                  @click="$store.studio.makeSketches()" x-text="$store.studio.sketchLabel()"></button>
+          <button type="button" class="btn pri" :disabled="!$store.studio.canCreate()"
+                  @click="$store.studio.approve()" x-text="$store.studio.createLabel()"></button>
+        </div>
+        <p class="small layout-note" x-show="$store.studio.layoutNote()" x-text="$store.studio.layoutNote()"></p>
+
+        <!-- the answer to a button: an in-page confirm, the reference packshot gate, or the plain error -->
+        <div class="respond" role="status" aria-live="polite">
+          <template x-if="$store.studio.run.confirm">
+            <div class="panel-box">
+              <p x-text="$store.studio.confirmText()"></p>
+              <div class="pair">
+                <button type="button" class="btn pri" :disabled="$store.studio.run.busy"
+                        @click="$store.studio.confirmCreate()">Create</button>
+                <button type="button" class="btn" @click="$store.studio.cancelConfirm()">Cancel</button>
+              </div>
+            </div>
+          </template>
+          <template x-if="$store.studio.run.anchor">
+            <div class="panel-box">
+              <p x-text="$store.studio.run.anchor.message"></p>
+              <button type="button" class="btn acc wide" :disabled="$store.studio.run.busy"
+                      @click="$store.studio.makeAnchor()" x-text="$store.studio.anchorButton()"></button>
+            </div>
+          </template>
+          <p class="run-err" x-show="$store.studio.run.error" x-text="$store.studio.run.error"></p>
+        </div>
+
+        <!-- the job panel: the job being watched (just made, or picked from Recent images) -->
+        <template x-for="j in $store.studio.watchedList()" :key="j.id">
+          <div class="jobp" aria-live="polite">
+            <div class="jobp-head"><b x-text="$store.studio.jobKind(j)"></b>
+              <span class="spill" :class="$store.studio.statusClass(j)" x-text="$store.studio.statusWord(j)"></span></div>
+            <p class="small" x-text="$store.studio.jobTitle(j)"></p>
+            <p class="small working" x-show="$store.studio.isActive(j)"><span class="spin" aria-hidden="true"
+                  x-show="!$store.studio.panel.lost"></span>
+              <span x-text="$store.studio.activeText(j)"></span></p>
+            <template x-if="j.kind === 'drafts' && j.status === 'done'">
+              <div>
+                <div class="sketches" role="group" aria-label="Sketches: pick a layout">
+                  <template x-for="(f, i) in $store.studio.files(j)" :key="f">
+                    <button type="button" class="sk" :class="{on: $store.studio.isChosen(f)}"
+                            :aria-pressed="String($store.studio.isChosen(f))" :disabled="!$store.studio.canChoose(j)"
+                            @click="$store.studio.choose(j, f, i)">
+                      <img x-bind="$store.studio.imgSrc(f)" :alt="$store.studio.sketchAlt(j, i)">
+                      <span x-text="$store.studio.isChosen(f) ? '✓ chosen layout' : 'Sketch ' + (i + 1)"></span>
+                    </button>
+                  </template>
+                </div>
+                <p class="cap" x-text="j.caption"></p>
+                <p class="small" x-text="$store.studio.sketchHint(j)"></p>
+              </div>
+            </template>
+            <template x-if="j.kind === 'final' && j.status === 'done'">
+              <p class="small" x-text="$store.studio.jobMeta(j) + ' · shown at the top.'"></p>
+            </template>
+            <template x-if="j.status === 'failed'">
+              <div><p class="why" x-text="$store.studio.errorText(j)"></p>
+                <p class="small" x-text="$store.studio.note('failed')"></p></div>
+            </template>
+            <p class="why" x-show="j.status === 'interrupted'" x-text="$store.studio.note('interrupted')"></p>
+          </div>
+        </template>
+
+        <template x-if="$store.studio.preview">
+          <div>
+            <button type="button" class="disc" aria-controls="full-prompt" :aria-expanded="String($store.studio.ui.promptOpen)"
+                    @click="$store.studio.togglePromptBox()"
+                    x-text="($store.studio.ui.promptOpen ? '▾ Hide' : '▸ Show') + ' the full prompt'"></button>
+            <pre class="prompt" id="full-prompt" x-show="$store.studio.ui.promptOpen" x-text="$store.studio.preview.prompt"></pre>
+          </div>
+        </template>
       </section>
-      <div class="card jobs-card">
-        <b>Your jobs</b>
-        <p class="small">Jobs appear here.</p>
-      </div>
+
+      <section class="card jobs-card" aria-labelledby="jobs-title">
+        <h2 class="sum-title" id="jobs-title">Recent images</h2>
+        <div class="small why lost" x-show="$store.studio.panel.error || $store.studio.panel.lost" role="status">
+          <span x-text="$store.studio.panel.error || $store.studio.lostText()"></span>
+          <button type="button" class="btn retry" @click="$store.studio.checkAgain()">Check again</button></div>
+        <p class="small" x-show="$store.studio.panel.loaded && !$store.studio.jobs.length">
+          Nothing made yet. Sketches and images you make appear here.</p>
+        <ul class="recent">
+          <template x-for="j in $store.studio.recentJobs()" :key="j.id">
+            <li><button type="button" class="rj" :class="{cur: $store.studio.watching === j.id}"
+                        :aria-current="$store.studio.watching === j.id ? 'true' : null" @click="$store.studio.watchJob(j)">
+              <span class="rj-th">
+                <template x-if="$store.studio.jobThumb(j)">
+                  <img x-bind="$store.studio.imgSrc($store.studio.jobThumb(j))" alt="">
+                </template>
+                <svg viewBox="0 0 100 100" aria-hidden="true" focusable="false" x-show="!$store.studio.jobThumb(j)"
+                     :fill="$store.studio.jobHex(j)"><use x-bind="$store.studio.hoodie(j.answers && j.answers.catalogue)"></use></svg>
+              </span>
+              <span class="rj-txt"><span class="rj-title" x-text="$store.studio.jobTitle(j)"></span>
+                <small x-text="$store.studio.jobMeta(j)"></small>
+                <small class="rj-cap" x-show="$store.studio.jobThumb(j)" x-text="j.caption"></small></span>
+              <span class="spill" :class="$store.studio.statusClass(j)" x-text="$store.studio.statusWord(j)"></span>
+            </button></li>
+          </template>
+        </ul>
+      </section>
     </div>
   </main>
 </div>

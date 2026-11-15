@@ -409,3 +409,32 @@ def test_preview_reports_route_tier(client):
         plain.pop(k)
     assert client.post("/api/preview", json={"answers": OAKMERE}).json()["tier"] == "premium"
     assert client.post("/api/preview", json={"answers": plain}).json()["tier"] == "standard"
+
+
+# --- sketches, approve & create, job panel (task 7) ------------------------------------------
+def test_job_dicts_carry_caption_from_brand(client):
+    """The page shows the job's caption under every image; it comes from brand.json, never from the page."""
+    captions = json.loads((ROOT / "brand" / "brand.json").read_text(encoding="utf-8"))["captions"]
+    assert captions["on_model"] == "AI model, concept render"
+    packshot = client.post("/api/jobs", json={"answers": OAKMERE, "kind": "final"}).json()["id"]
+    on_model = client.post("/api/jobs", json={"answers": OLIVE_ON_MODEL, "kind": "drafts"}).json()["id"]
+    want = {packshot: captions["concept_render"], on_model: captions["on_model"]}
+    for jid, caption in want.items():
+        assert client.get(f"/api/jobs/{jid}").json()["caption"] == caption
+    assert {j["id"]: j["caption"] for j in client.get("/api/jobs").json()["jobs"]} == want
+
+
+def test_over_one_dollar_409_says_needs_confirm(client, monkeypatch):
+    est = {"base_usd": 1.5, "worst_usd": 13.5, "action": "run", "reason": "", "tier": "premium", "model": "m"}
+    monkeypatch.setattr(app_mod, "estimate", lambda spec, kind="final", layout_refs=(): dict(est))
+    r = client.post("/api/jobs", json={"answers": OAKMERE, "kind": "final"})
+    assert r.status_code == 409
+    body = r.json()
+    assert body["needs_confirm"] is True and body["estimate_usd"] == 1.5 and "confirm" in body["error"]
+    assert job_count() == 0
+    # other refusals do not ask for a confirm: the page shows their error instead
+    spend(monkeypatch, gemini_usd=8.95)
+    monkeypatch.setattr(app_mod, "estimate", lambda spec, kind="final", layout_refs=(): {
+        **est, "action": "stop", "reason": "monthly cap reached"})
+    r = client.post("/api/jobs", json={"answers": OAKMERE, "kind": "final", "confirm": True})
+    assert r.status_code == 409 and "needs_confirm" not in r.json()

@@ -1,6 +1,6 @@
 // CSC Studio page: one Alpine store, organised by concern (storage, api, builder rules, then the
-// store: budget, tabs, builder questions, answers, preview, fill from my words and the summary).
-// Later tasks add the jobs.
+// store: budget, tabs, builder questions, answers, preview, fill from my words, the summary, and
+// the jobs: sketches, approve & create, the job panel and recent images).
 // Only UI conveniences go in localStorage (tour seen, draft of the answers), always in try/catch.
 (function () {
   const BUDGET_REFRESH_MS = 60000;
@@ -74,6 +74,31 @@
   // picked-up chips read as plain words: these labels are lower-cased ("olive", "screen print")
   const CHIP_LOWER = new Set(['purpose', 'catalogue', 'colour', 'recipe', 'scene', 'decoration', 'technique', 'placement']);
   const PROVIDERS = { claude: 'Claude', gemini: 'Gemini' };
+  // jobs: the server makes them; the page starts them, watches them and shows their images
+  const POLL_MS = 2000;
+  const POLL_FAILS = 3;  // status checks in a row that fail before the page stops checking
+  const JOB_LIST = 20;  // jobs fetched on load: any queued or running among them is watched again
+  const RECENT = 6;  // entries in "Recent images"
+  const ACTIVE = new Set(['queued', 'running']);
+  const STATUS_WORDS = { queued: 'Waiting', running: 'Making…', done: 'Done', failed: 'Failed', interrupted: 'Stopped' };
+  const JOB_NOTES = {
+    queued: 'Waiting for the studio to start it…',
+    drafts: 'Making 3 free sketches… usually under a minute.',
+    final: 'Creating your image… this can take a minute.',
+    anchor: 'Making the reference packshot… this can take a minute.',
+    pick: 'Click the layout you like; Approve & create builds on it.',
+    otherShot: 'These sketches are for other choices than the ones above, so they cannot be picked. Make new sketches for this shot.',
+    failed: 'Nothing was retried. You can try again with the buttons above.',
+    noError: 'It stopped without saying why.',
+    interrupted: 'Stopped when the studio restarted; nothing was retried.',
+    review: 'Checks and approval come in the Review tab (next step).',
+    anchorDone: 'Approve this reference packshot in the Review tab (next step); then come back and create your shot.',
+    unreachable: "Couldn't reach the studio; check it is running, then try again.",
+    refused: "The studio couldn't start this. Try again in a moment.",
+    list: "Couldn't load your recent images; check the studio is running.",
+    lost: 'Lost touch with the studio while checking on your images. Check it is running, then check again.',
+    unchecked: 'Not being checked: lost touch with the studio (see Recent images).',
+  };
 
   function plainObject(v) { return v && typeof v === 'object' && !Array.isArray(v) ? v : {}; }
   function same(a, b) { return JSON.stringify(a) === JSON.stringify(b); }
@@ -83,6 +108,19 @@
   function reducedMotion() {
     try { return window.matchMedia('(prefers-reduced-motion: reduce)').matches; } catch (e) { return false; }
   }
+  // an output image the server may serve (out/drafts, out/finals): each path segment URL-encoded
+  function fileUrl(path) { return '/api/files/' + String(path).split('/').map(encodeURIComponent).join('/'); }
+  function jobFiles(j) {
+    const files = j && j.result && Array.isArray(j.result.files) ? j.result.files : [];
+    return files.filter(f => typeof f === 'string' && f);
+  }
+  function clockText(iso) {  // a job's time: hh:mm today, else the day and month
+    const d = new Date(iso);
+    if (Number.isNaN(d.getTime())) return '';
+    const today = d.toDateString() === new Date().toDateString();
+    return today ? d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+      : d.toLocaleDateString([], { day: 'numeric', month: 'short' });
+  }
 
   // timers and request numbers: a reply is used only if no newer request was made since.
   // questionsOpen / previewOpen: the number of the newest request still in flight (0 if none).
@@ -90,6 +128,7 @@
   let previewTimer = null, previewSeq = 0, previewOpen = 0;
   let wordsReveal = false;  // the next questions reply shows sections opened by "Fill from my words"
   const edits = {};  // section id -> how often the person set it: a brief reply never overrides a newer edit
+  let pollTimer = null, pollBusy = false, pollFails = 0;  // one status check of the active jobs at a time
 
   // --- store ----------------------------------------------------------------------------------
   function createStudio() {
@@ -111,9 +150,17 @@
       brief: { text: '', busy: false, error: '', done: false, picked: {}, owned: {}, hint: '', provider: '', fallback: false },
       // preview: prompt, cost and route tier for complete answers from /api/preview
       preview: null,
-      // job / jobs: the job being watched and the job list (task 7)
-      job: null,
+      // jobs: this person's jobs from the server, newest first; watching: the id shown in the job panel
       jobs: [],
+      watching: null,
+      // chosen: the sketch picked as the layout of the next final ({file, n, shotId, caption, words});
+      // it belongs to one shot, so any change to the answers clears it
+      chosen: null,
+      // run: the buttons' request and its answer (in-page confirm, reference packshot gate, error);
+      // anchorJobs: reference packshots made from the gate this visit
+      run: { busy: false, error: '', confirm: null, anchor: null, anchorJobs: [] },
+      // panel: the job list's own state (loaded, load error, status checks given up)
+      panel: { loaded: false, error: '', lost: false },
       // budget: figures from /api/health
       budget: { gemini_usd: 0, cap_usd: 9, cf_neurons: 0, cf_cap: 9500, loaded: false, error: '' },
       // ui: current tab, guide panel, tour (task 8)
@@ -128,6 +175,7 @@
           Object.assign(this.builder.custom, { open: true, name: String(c.name || ''), hex: String(c.hex || '') });
         }
         this.loadQuestions();
+        this.loadJobs();
       },
 
       // budget
@@ -243,8 +291,10 @@
 
       // --- builder: answers -----------------------------------------------------------------
       setAnswer(id, value) {  // every pick, custom colour edit and size change by the person comes here
+        const before = this.answers[id];
         if (value === null || value === undefined) delete this.answers[id];
         else this.answers[id] = value;
+        if (!same(before, this.answers[id])) this.answersChanged();
         edits[id] = (edits[id] || 0) + 1;
         delete this.brief.owned[id];  // the person's own answer now: sent with the next words, and kept
         this.builder.fresh = this.builder.fresh.filter(x => x !== id);
@@ -391,15 +441,18 @@
       applyBrief(data, sent, before, seen) {
         const b = this.brief, got = plainObject(data.answers);
         const untouched = k => edits[k] === seen[k] && same(this.answers[k], before[k]);  // not set during the request
+        let changed = false;
         for (const k of Object.keys(got)) {
           if (same(got[k], sent[k])) continue;  // the person's own answer, sent and kept
           if (!untouched(k)) continue;  // set by the person while the words were read
           if (same(got[k], this.answers[k])) continue;  // the same as already there: no change, no chip
           this.answers[k] = got[k];
+          changed = true;
           b.picked[k] = got[k];
           b.owned[k] = got[k];
           this.builder.fresh = this.builder.fresh.filter(x => x !== k);
         }
+        if (changed) this.answersChanged();
         if ('colour' in b.picked) Object.assign(this.builder.custom, { open: false, hint: '' });
         const hint = typeof data.colour_hint === 'string' ? data.colour_hint.trim().slice(0, MAX_COLOUR_NAME) : '';
         // a colour outside the samples: open Custom with its name and an empty hex (never a guessed one),
@@ -496,6 +549,253 @@
           ? 'This colour has no approved reference packshot yet; you will be asked to make it first.' : '';
       },
       togglePromptBox() { this.ui.promptOpen = !this.ui.promptOpen; },
+
+      // --- jobs: the list, watching and polling ------------------------------------------------
+      async loadJobs() {
+        let res;
+        try {
+          res = await api('/api/jobs?limit=' + JOB_LIST);
+        } catch (e) {
+          this.panel.error = JOB_NOTES.list;
+          return;
+        }
+        this.jobs = (Array.isArray(res.jobs) ? res.jobs : []).filter(j => j && Number.isInteger(j.id));
+        Object.assign(this.panel, { loaded: true, error: '', lost: false });
+        pollFails = 0;
+        // a reloaded page watches the newest job still being made, and checks on every active one
+        const active = this.jobs.find(j => ACTIVE.has(j.status));
+        if (!this.watchedJob()) this.watching = active ? active.id : null;
+        this.schedulePoll();
+      },
+      putJob(job) {  // a fresh copy of one job from the server replaces the old one
+        if (!job || typeof job !== 'object' || !Number.isInteger(job.id)) return;
+        const i = this.jobs.findIndex(j => j.id === job.id);
+        const was = i >= 0 ? this.jobs[i].status : null;
+        if (i >= 0) this.jobs.splice(i, 1, job);
+        else this.jobs.unshift(job);
+        if (ACTIVE.has(was) && !ACTIVE.has(job.status)) this.refreshBudget();  // it may have spent
+      },
+      dropJob(id) {
+        this.jobs = this.jobs.filter(j => j.id !== id);
+        if (this.watching === id) this.watching = null;
+      },
+      activeJobs() { return this.jobs.filter(j => ACTIVE.has(j.status)); },
+      schedulePoll() {  // every 2 s while any job is queued or running; stops when none is
+        if (pollTimer || this.panel.lost || !this.activeJobs().length) return;
+        pollTimer = setTimeout(() => { pollTimer = null; this.pollJobs(); }, POLL_MS);
+      },
+      async pollJobs() {
+        if (pollBusy) return;  // the check in flight schedules the next one
+        pollBusy = true;
+        try {
+          for (const j of this.activeJobs()) {
+            let res;
+            try {
+              res = await fetch('/api/jobs/' + j.id);
+            } catch (e) {
+              res = null;
+            }
+            if (res && res.status === 404) { this.dropJob(j.id); continue; }  // gone from the job store
+            const fresh = res && res.ok ? await res.json().catch(() => null) : null;
+            if (!fresh) {
+              if (++pollFails >= POLL_FAILS) { this.panel.lost = true; return; }
+              continue;
+            }
+            pollFails = 0;
+            this.putJob(fresh);
+          }
+        } finally {
+          pollBusy = false;
+          this.schedulePoll();
+        }
+      },
+      checkAgain() { Object.assign(this.panel, { lost: false, error: '' }); this.loadJobs(); },
+      lostText() { return this.panel.lost ? JOB_NOTES.lost : ''; },
+      watchedJob() { return this.watching === null ? null : this.jobs.find(j => j.id === this.watching) || null; },
+      watchedList() { const j = this.watchedJob(); return j ? [j] : []; },  // x-for over it names the job
+      watchJob(j) { this.watching = j.id; },
+      recentJobs() { return this.jobs.slice(0, RECENT); },
+      answersChanged() {  // sketches, the chosen layout and the buttons' answers belong to the old shot
+        this.chosen = null;
+        Object.assign(this.run, { error: '', confirm: null, anchor: null });
+        const w = this.watchedJob();
+        if (w && !ACTIVE.has(w.status)) this.watching = null;  // a job still being made stays in view
+      },
+
+      // --- jobs: sketches and approve & create --------------------------------------------------
+      currentShot() {  // the shot on screen, once its cost is back for the current answers
+        return this.preview && !this.builder.waiting && !this.missing.length ? this.preview.shot_id : null;
+      },
+      shotActive(kind) {  // a job of this kind for the shot on screen is still being made
+        const sid = this.currentShot();
+        return !!sid && this.jobs.some(j => j.kind === kind && j.shot_id === sid && ACTIVE.has(j.status));
+      },
+      canSketch() { return !!this.currentShot() && !this.run.busy && !this.shotActive('drafts'); },
+      canCreate() {
+        return !!this.currentShot() && !this.run.busy && this.preview.action === 'run' && !this.shotActive('final');
+      },
+      sketchLabel() { return this.shotActive('drafts') ? 'Making sketches…' : 'See 3 free sketches'; },
+      createLabel() { return this.shotActive('final') ? 'Creating your image…' : 'Approve & create'; },
+      layout() {  // the chosen sketch, only while it belongs to the shot on screen
+        const c = this.chosen;
+        return c && c.shotId === this.currentShot() ? c.file : null;
+      },
+      layoutNote() { return this.layout() ? 'Builds on sketch ' + this.chosen.n + ', your chosen layout.' : ''; },
+      makeSketches() {
+        if (!this.canSketch()) return null;
+        return this.sendJob({ answers: this.liveAnswers(), kind: 'drafts', confirm: false, layout: null });
+      },
+      approve() {
+        if (!this.canCreate()) return null;
+        return this.sendJob({ answers: this.liveAnswers(), kind: 'final', confirm: false, layout: this.layout() });
+      },
+      confirmCreate() {  // "Create" in the in-page confirm: the same request, confirmed
+        const c = this.run.confirm;
+        return c ? this.sendJob({ ...c.body, confirm: true }) : null;
+      },
+      cancelConfirm() { this.run.confirm = null; },
+      confirmText() {
+        const c = this.run.confirm;
+        return c ? 'This will cost about ' + money(c.usd) + '. Create it?' : '';
+      },
+      async sendJob(body) {  // one request at a time: the buttons are disabled until it is answered
+        if (this.run.busy) return null;
+        this.run.busy = true;
+        Object.assign(this.run, { error: '', confirm: null });
+        try {
+          return await this.postJob(body);
+        } finally {
+          this.run.busy = false;
+        }
+      },
+      async postJob(body) {
+        let res, data;
+        try {
+          res = await fetch('/api/jobs', post(body));
+          data = plainObject(await res.json().catch(() => null));
+        } catch (e) {
+          this.run.error = JOB_NOTES.unreachable;
+          return null;
+        }
+        if (res.status === 201 && Number.isInteger(data.id)) {
+          await this.watchNew(data.id, body);
+          return data.id;
+        }
+        if (res.status === 409 && data.needs_confirm === true && Number.isFinite(Number(data.estimate_usd))) {
+          this.run.confirm = { usd: Number(data.estimate_usd), body };
+        } else if (res.status === 409 && data.needs_anchor === true) {
+          this.showAnchorGate(data);
+        } else {
+          this.run.error = typeof data.error === 'string' && data.error.trim() ? capital(data.error.trim()) : JOB_NOTES.refused;
+        }
+        return null;
+      },
+      async watchNew(id, body) {  // a job just made: in the list and the panel before the buttons come back
+        let job = null;
+        try { job = await api('/api/jobs/' + id); } catch (e) { job = null; }
+        this.putJob(job || { id, kind: body.kind, status: 'queued', answers: body.answers, shot_id: this.currentShot(),
+                             result: null, error: null, caption: '', created: new Date().toISOString() });
+        this.watching = id;
+        this.schedulePoll();
+        window.Alpine.nextTick(() => {  // bring its status into view (it sits under the buttons)
+          const panel = document.querySelector('.jobp');
+          if (panel) panel.scrollIntoView({ block: 'nearest', behavior: reducedMotion() ? 'auto' : 'smooth' });
+        });
+      },
+
+      // reference packshot gate: the shot needs an approved packshot of its colour first
+      async showAnchorGate(data) {
+        const gate = { message: String(data.error || ''), answers: plainObject(data.anchor_answers), cost: '' };
+        this.run.anchor = gate;
+        try {  // its cost, from the same preview the summary uses (no image is made)
+          const p = await api('/api/preview', post({ answers: gate.answers }));
+          if (this.run.anchor && same(this.run.anchor.answers, gate.answers) && typeof p.base_usd === 'number') {
+            this.run.anchor.cost = money(p.base_usd);
+          }
+        } catch (e) { /* the button keeps its fixed wording */ }
+      },
+      anchorButton() {
+        const a = this.run.anchor;
+        return 'Make the reference packshot first (' + (a && a.cost ? 'about ' + a.cost : 'a standard image') + ')';
+      },
+      async makeAnchor() {
+        const a = this.run.anchor;
+        if (!a) return;
+        const id = await this.sendJob({ answers: a.answers, kind: 'final', confirm: false, layout: null });
+        if (id !== null) {
+          this.run.anchorJobs.push(id);
+          this.run.anchor = null;
+        }
+      },
+
+      // --- jobs: what the panel and the list show -----------------------------------------------
+      note(key) { return JOB_NOTES[key] || ''; },
+      isActive(j) { return ACTIVE.has(j.status); },
+      isAnchor(j) { return this.run.anchorJobs.includes(j.id); },
+      files(j) { return jobFiles(j); },
+      imgSrc(path) { return { src: fileUrl(path) }; },  // x-bind object: the URL is encoded, never raw text
+      statusWord(j) { return STATUS_WORDS[j.status] || ''; },
+      statusClass(j) { return STATUS_WORDS[j.status] ? 's-' + j.status : ''; },
+      jobWords(j) {  // the shot in plain words, from the option labels: "olive oversized pullover hoodie, on model, front"
+        const a = plainObject(j && j.answers);
+        const label = (id, v) => {
+          const s = this.sections.find(x => x.id === id);
+          return (s && this.optionLabel(s, v)) || (typeof v === 'string' ? v.replace(/-/g, ' ') : '');
+        };
+        const garment = [label('colour', a.colour), label('catalogue', a.catalogue)].filter(Boolean).join(' ');
+        const design = a.decoration === 'design' ? label('design', a.design) : '';
+        return [garment.toLowerCase(), label('recipe', a.recipe).toLowerCase(), design].filter(Boolean).join(', ');
+      },
+      jobTitle(j) { return capital(this.jobWords(j)); },
+      jobKind(j) {
+        if (j.kind === 'drafts') return '3 free sketches';
+        return this.isAnchor(j) ? 'Reference packshot' : 'Final image';
+      },
+      jobMeta(j) {
+        const parts = [this.jobKind(j)];
+        const r = j.result && typeof j.result.cost_usd === 'number' ? j.result.cost_usd : null;
+        if (j.kind === 'final' && r !== null) parts.push(money(r));
+        parts.push(clockText(j.created));
+        return parts.filter(Boolean).join(' · ');
+      },
+      activeText(j) {
+        if (this.panel.lost) return JOB_NOTES.unchecked;
+        if (j.status === 'queued') return JOB_NOTES.queued;
+        if (j.kind === 'drafts') return JOB_NOTES.drafts;
+        return this.isAnchor(j) ? JOB_NOTES.anchor : JOB_NOTES.final;
+      },
+      errorText(j) { return j.error ? capital(String(j.error)) : JOB_NOTES.noError; },
+      jobHex(j) {  // the job's colour, for the small hoodie drawing in the list
+        const v = plainObject(j && j.answers).colour;
+        if (v && typeof v === 'object') return HEX_RE.test(v.hex) ? v.hex : NO_COLOUR;
+        const sec = this.sections.find(s => s.id === 'colour');
+        const o = sec && sec.options.find(x => x.id === v);
+        return o && HEX_RE.test(o.sub) ? o.sub : NO_COLOUR;
+      },
+      jobThumb(j) { const f = jobFiles(j); return j.status === 'done' && f.length ? f[0] : ''; },
+      canChoose(j) { return j.kind === 'drafts' && j.status === 'done' && !!j.shot_id && j.shot_id === this.currentShot(); },
+      isChosen(f) { return !!this.chosen && this.chosen.file === f; },
+      choose(j, f, i) {  // a second click on the chosen sketch un-picks it
+        if (!this.canChoose(j)) return;
+        this.chosen = this.isChosen(f) ? null
+          : { file: f, n: i + 1, shotId: j.shot_id, caption: j.caption || '', words: this.jobWords(j) };
+      },
+      sketchAlt(j, i) { return 'Sketch ' + (i + 1) + ' of ' + this.jobWords(j); },
+      sketchHint(j) { return this.canChoose(j) ? JOB_NOTES.pick : JOB_NOTES.otherShot; },
+      finalNote(j) { return this.isAnchor(j) ? JOB_NOTES.anchorDone : JOB_NOTES.review; },
+      shownImage() {  // the big preview box: the watched job's finished final, else the chosen sketch
+        const w = this.watchedJob();
+        if (w && w.kind === 'final' && w.status === 'done' && jobFiles(w).length) {
+          return { file: jobFiles(w)[0], alt: (this.isAnchor(w) ? 'Reference packshot: ' : 'Final image: ') + this.jobWords(w),
+                   label: this.jobKind(w), caption: w.caption || '', note: this.finalNote(w) };
+        }
+        const c = this.chosen;
+        if (c) {
+          return { file: c.file, alt: 'Sketch ' + c.n + ' of ' + c.words, caption: c.caption,
+                   label: 'Sketch ' + c.n + ' · your chosen layout · free, never published', note: '' };
+        }
+        return null;
+      },
     };
   }
 

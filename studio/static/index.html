@@ -558,6 +558,7 @@
                     <p class="small anchor-hint" x-text="$store.studio.reviewNote('anchorHint')"></p>
                   </div>
                 </template>
+                <p class="small anchor-hint" x-show="it.anchor_note" x-text="it.anchor_note"></p>
                 <template x-if="$store.studio.isOpen(it)">
                   <button type="button" class="btn" :id="'rv-ask-' + it.id" :aria-expanded="String($store.studio.pickerOpen(it))"
                           :aria-controls="'rv-picker-' + it.id" @click="$store.studio.togglePicker(it)">Ask for a change&hellip;</button>

@@ -323,6 +323,8 @@ def review_item(job: dict, steps: list[dict]) -> dict:
         "answers": job.get("answers") or {}, "shot_id": shot_id, "words": shot_words(job),
         "caption": caption_for(job.get("answers")), "layout": served(job.get("layout")),
         "review": review, "reason": _public(job.get("review_reason")),
+        # why a plain front packshot open to a verdict has no "Approve as reference packshot" (None for other shots)
+        "anchor_note": refusal if open_ and refusal not in (None, NOT_PLAIN) else None,
         "latest": served(latest), "images": [served(i) for i in chain_images(job, steps)],
         "steps": [_step(s) for s in steps],
         "checks": checks_summary(steps, latest),

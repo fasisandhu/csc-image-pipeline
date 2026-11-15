@@ -533,7 +533,10 @@ def test_anchor_refuses_sketch_decorated_or_other_recipe(env, client):
     cases = [(sketched, "sketch"), (decorated, "plain front packshot"), (on_model, "plain front packshot"),
              (composite, "logo placement")]
     for case, why in cases:
-        assert client.get(f"/api/reviews/{case.id}").json()["actions"]["anchor"] is False
+        item = client.get(f"/api/reviews/{case.id}").json()
+        assert item["actions"]["anchor"] is False
+        # a plain front packshot says why it has no reference-packshot button; any other shot says nothing
+        assert (item["anchor_note"] is None) if why == "plain front packshot" else (why in item["anchor_note"])
         for body in ({}, {"replace": True}):
             r = post(client, case.id, "anchor", body)
             assert r.status_code == 409 and why in r.json()["error"], (why, r.text)
@@ -544,8 +547,10 @@ def test_anchor_refuses_sketch_decorated_or_other_recipe(env, client):
 
 def test_anchor_writes_png_and_needs_replace(env, client):
     a = env.final(PLAIN, colour=(90, 90, 60))
+    assert client.get(f"/api/reviews/{a.id}").json()["anchor_note"] is None  # it can: the button says it all
     r = post(client, a.id, "anchor")
     assert r.status_code == 200, r.text
+    assert r.json()["item"]["anchor_note"] is None  # decided: nothing more to explain
     target = env.anchors / ANCHOR
     with Image.open(target) as im:
         assert im.format == "PNG" and im.size == (40, 50)

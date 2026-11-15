@@ -22,7 +22,7 @@
     <div class="logo">CSC <b>Studio</b></div>
     <nav class="tabs" aria-label="Sections">
       <template x-for="t in $store.studio.ui.tabs" :key="t.id">
-        <a href="#" :class="{cur: $store.studio.ui.tab === t.id, soon: t.dim}"
+        <a href="#" :id="'tab-' + t.id" :class="{cur: $store.studio.ui.tab === t.id, soon: t.dim}"
            :aria-current="$store.studio.ui.tab === t.id ? 'page' : null"
            @click.prevent="$store.studio.openTab(t)"><span x-text="$store.studio.tabLabel(t)"></span> <span
            class="tbadge" x-show="$store.studio.tabBadge(t)" x-text="$store.studio.tabBadge(t)"></span></a>

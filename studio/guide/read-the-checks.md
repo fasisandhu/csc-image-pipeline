@@ -1,6 +1,6 @@
 # Read the checks
 
-Here is what each check means. The pipeline's QA step runs these checks. Studio does not yet run them on its own jobs, so for now look over a Studio image yourself.
+Here is what each check means. Studio runs these checks on every image it makes and fixes what it can; Review and approve shows where to see the results.
 
 - **Colour:** Difference under {{colour.tolerance}} matches; {{colour.tolerance}} to {{colour.drift_max}} is corrected automatically; over {{colour.drift_max}} is remade.
 - **Logo text:** Must read the same as the artwork. The comparison ignores case, spaces and punctuation.

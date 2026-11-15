@@ -95,7 +95,7 @@
     noError: 'It stopped without saying why.',
     interrupted: 'Stopped when the studio restarted; nothing was retried.',
     review: 'Its checks, fixes and approval are in the Review tab.',
-    anchorDone: 'This reference packshot needs approving before your shot can use it. For now, ask the owner to approve it; the Review tab arrives in the next step.',
+    anchorDone: 'Your shot can use this reference packshot once it is approved: in the Review tab, press “Approve as reference packshot”, then come back and create your shot.',
     unreachable: "Couldn't reach the studio; check it is running, then try again.",
     refused: "The studio couldn't start this. Try again in a moment.",
     list: "Couldn't load your recent images; check the studio is running.",
@@ -107,12 +107,14 @@
   const GUIDE_PAGES = [
     { id: 'start-here', title: 'Start here' },
     { id: 'make-a-website-image', title: 'Make a website image' },
+    { id: 'review-and-approve', title: 'Review and approve' },
     { id: 'read-the-checks', title: 'Read the checks' },
     { id: 'rules', title: 'Rules' },
   ];
   const GUIDE_LATER = 'Coming later: client orders, costs and budget, when something goes wrong.';
   const GUIDE_ERROR = "Couldn't load this page; check the studio is running, then try again.";
-  // the first-visit tour: one pointer per part of the builder; a step whose part is hidden is skipped
+  // the first-visit tour: one pointer per part of the builder, then the Review tab; a step whose part is hidden is
+  // skipped, and so is a step on a tab that is not live (tab: its TABS id)
   const TOUR = [
     { anchor: '#idea', title: 'Start with your idea',
       text: 'Type what you want in your own words and press Fill from my words. Or skip this and pick below.' },
@@ -124,6 +126,8 @@
       text: 'Quick rough layouts at no cost. Click one to build on it. Sketches never go on the website.' },
     { anchor: '#btn-create', title: 'Approve & create',
       text: 'Makes the real image and shows it here with its caption. Big spends ask you first; the Guide has the exact rules.' },
+    { anchor: '#tab-review', tab: 'review', title: 'Review tab',
+      text: 'Each new image is checked here and fixed within its limits. Approve it, or reject it with a note; approved images go to the Library to export.' },
   ];
   const TOUR_GAP = 12;  // px between the tour card and what it points at, and from the window edge
   const TOUR_PAD = 6;  // px of the highlight ring around what it points at
@@ -376,7 +380,9 @@
   function guideDialog() { return document.getElementById('guide'); }
   function guideButton() { return document.getElementById('guide-btn'); }
   function tourAnchor(i) { return TOUR[i] ? document.querySelector(TOUR[i].anchor) : null; }
+  function tabLive(id) { const t = TABS.find(x => x.id === id); return !!t && !t.later && !t.dim; }
   function tourAvailable(i) {  // a step is shown only while its part of the page is (never a pointer at nothing)
+    if (TOUR[i] && TOUR[i].tab && !tabLive(TOUR[i].tab)) return false;
     const el = tourAnchor(i);
     return shown(el) && !el.closest('[inert], dialog:not([open])');
   }

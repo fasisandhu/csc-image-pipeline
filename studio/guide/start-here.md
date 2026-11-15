@@ -10,7 +10,7 @@ We tested the same request both ways, side by side. The direct call:
 - left out the drawcords;
 - drew a 22 cm logo about 50 cm wide.
 
-Studio caught all three and fixed them. It works from our own catalogue and brand files, so garment facts are never guessed. Then its QA step checks colour, logo text, logo size and stray text. Studio does not yet run these checks on its own jobs.
+Studio caught all three and fixed them. It works from our own catalogue and brand files, so garment facts are never guessed. Then it checks every image for colour, logo text, logo size and stray text, and fixes what it can. You approve each image in the Review tab.
 
 ## The caption
 

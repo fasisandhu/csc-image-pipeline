@@ -8,11 +8,11 @@ from pathlib import Path
 from pipeline import ledger
 from pipeline.compile import load_json
 
-from .worker import DRAFTS
+from .worker import COLOUR_CORRECTIONS_PER_RENDER, DRAFTS
 
 DIR = Path(__file__).resolve().parent / "guide"
 # the only pages, in the order the guide lists them; nothing else is ever read from disk
-PAGES = ("start-here", "make-a-website-image", "read-the-checks", "rules")
+PAGES = ("start-here", "make-a-website-image", "review-and-approve", "read-the-checks", "rules")
 
 
 def _num(x: float) -> str:
@@ -28,6 +28,7 @@ def values() -> dict[str, str]:
         "logo.size_high_pct": _num(round(qa["logo"]["size_high"] * 100)),
         "limits.repairs_per_render": _num(lim["repairs_per_render"]),
         "limits.regenerations_per_shot": _num(lim["regenerations_per_shot"]),
+        "limits.colour_corrections_per_render": _num(COLOUR_CORRECTIONS_PER_RENDER),  # free; the chain's own cap
         "budget.cap_usd": f"{ledger.GEMINI_MONTHLY_CAP_USD:.2f}",
         "budget.ask_over_usd": f"{ledger.RUN_APPROVAL_USD:.2f}",
         "sketches.count": _num(DRAFTS),

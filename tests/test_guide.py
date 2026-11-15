@@ -1,3 +1,4 @@
+import html
 import re
 from pathlib import Path
 
@@ -5,9 +6,10 @@ import pytest
 from fastapi.testclient import TestClient
 
 from pipeline import ledger
+from pipeline.compile import load_json
 from studio import app as app_mod
 from studio import guide
-from studio.worker import DRAFTS
+from studio.worker import COLOUR_CORRECTIONS_PER_RENDER, DRAFTS
 
 
 def test_checks_page_uses_live_thresholds():
@@ -18,9 +20,16 @@ def test_checks_page_uses_live_thresholds():
 
 
 def test_guide_claims_match_what_runs_today():
+    """The review chain checks every image Studio makes, after it is shown on Create image (so never "before you
+    see" it); no page still says the checks do not run, or sends people to a step that has arrived."""
     checks, start = guide.render("read-the-checks"), guide.render("start-here")
-    assert "before you see" not in checks and "before you see" not in start  # the worker does not run QA yet
+    assert "before you see" not in checks and "before you see" not in start
     assert "ignores case, spaces and punctuation" in checks  # logo.normalise_text
+    for p in guide.PAGES:
+        page = guide.render(p)
+        for stale in ("does not yet run", "for now", "For now", "next step", "ask the owner"):
+            assert stale not in page, (p, stale)
+    assert "Review and approve" in checks and "Review" in start
 
 
 def test_all_pages_render_without_placeholders():
@@ -76,7 +85,7 @@ def static_text(name: str) -> str:
 
 
 def test_guide_pages_list():
-    assert guide.PAGES == ("start-here", "make-a-website-image", "read-the-checks", "rules")
+    assert guide.PAGES == ("start-here", "make-a-website-image", "review-and-approve", "read-the-checks", "rules")
 
 
 def test_make_a_website_image_page_renders():
@@ -130,11 +139,97 @@ def test_tour_flag_is_kept_in_storage_inside_try():
 
 
 def test_reference_packshot_approval_is_not_a_dead_end():
-    """Until the Review screen exists, the page and the guide send people to the owner for the approval, not to a
-    tab that says "coming in a later step" (final review minor)."""
+    """The Review tab is live: the page and the guide send people there, to the button that does it, and no longer
+    to the owner (plan 2's stopgap)."""
     js = static_text("app.js")
-    assert ("anchorDone: 'This reference packshot needs approving before your shot can use it. For now, ask the "
-            "owner to approve it; the Review tab arrives in the next step.'") in js
-    assert "Approve this reference packshot in the Review tab" not in js
+    assert ("anchorDone: 'Your shot can use this reference packshot once it is approved: in the Review tab, press "
+            "“Approve as reference packshot”, then come back and create your shot.'") in js
+    assert "ask the owner" not in js and "arrives in the next step" not in js
     step5 = guide.render("make-a-website-image").split("## 5.")[1].split("## 6.")[0]
-    assert "ask the owner to approve it" in step5 and "Review tab arrives in the next step" in step5
+    assert "**Review**" in step5 and "**Approve as reference packshot**" in step5
+    assert "ask the owner" not in step5 and "next step" not in step5
+    step6 = guide.render("make-a-website-image").split("## 6.")[1]
+    assert "Review and approve" in step6 and "next step" not in step6
+
+
+# --- plan 3 task 7: the "Review and approve" page and the tour's Review tab stop ---------------
+REVIEW_STEPS = (  # the sections of "Review and approve", in order
+    "1. The checks run by themselves",
+    "2. Fixes run by themselves, within limits",
+    "3. Your verdict",
+    "4. Reference packshots",
+    "5. Rejection notes become rules",
+    "6. Export from the Library",
+)
+
+UI_WORDS = (  # the page's own words that "Review and approve" names: buttons, states, headings and tabs
+    "Review", "Library", "Approve & create", "Approve", "Approve as reference packshot", "Ask for a change",
+    "Reject with a note", "Change my choices", "Run the checks", "Replace", "Needs a person",
+    "Show what ran automatically", "Rules from rejection notes", "Where it applies", "Switch on", "Dismiss",
+    "Export for the website", "Approval PDF",
+)
+
+
+def page_words() -> str:
+    """Every word the page can show: index.html (entities decoded) and app.js."""
+    return html.unescape(static_text("index.html")) + static_text("app.js")
+
+
+def test_review_and_approve_page_renders():
+    page = guide.render("review-and-approve")
+    assert "{{" not in page and "}}" not in page
+    at = [page.find("## " + s) for s in REVIEW_STEPS]
+    assert all(i >= 0 for i in at), [s for s, i in zip(REVIEW_STEPS, at) if i < 0]
+    assert at == sorted(at) and page.count("\n## ") == len(REVIEW_STEPS)
+    lim = load_json("brand/repairs.json")["limits"]
+    assert f"up to {lim['repairs_per_render']} repairs per image" in page
+    assert f"up to {lim['regenerations_per_shot']} new images per shot" in page
+    assert f"up to {COLOUR_CORRECTIONS_PER_RENDER} times per image" in page
+    for s in UI_WORDS:
+        assert f"**{s}" in page, s  # each button, state and heading it names, in bold as the guide marks them
+
+
+def test_review_and_approve_numbers_come_from_the_rule_files(monkeypatch):
+    """The limits are placeholders filled from brand/repairs.json and the worker, never typed into the page."""
+    real = guide.load_json
+
+    def fake(path):
+        doc = real(path)
+        if path == "brand/repairs.json":
+            doc = {**doc, "limits": {"repairs_per_render": 7, "regenerations_per_shot": 9}}
+        return doc
+    monkeypatch.setattr(guide, "load_json", fake)
+    monkeypatch.setattr(guide, "COLOUR_CORRECTIONS_PER_RENDER", 4)
+    page = guide.render("review-and-approve")
+    assert "up to 7 repairs per image" in page and "up to 9 new images per shot" in page
+    assert "up to 4 times per image" in page
+    assert guide.values()["limits.colour_corrections_per_render"] == "4"
+
+
+def test_review_and_approve_names_only_words_on_the_page():
+    """The buttons, states and headings the guide names are the page's own words (no drift)."""
+    words = page_words()
+    built = {"Show what ran automatically": "'▸ Show') + ' what ran automatically'"}  # a label the page puts together
+    assert not [w for w in UI_WORDS if built.get(w, w) not in words]
+
+
+def test_review_and_approve_endpoint():
+    r = local_client().get("/api/guide/review-and-approve")
+    assert r.status_code == 200 and r.headers["content-type"].startswith("text/markdown")
+    assert "## " + REVIEW_STEPS[0] in r.text
+
+
+def test_tour_ends_on_the_review_tab_while_it_is_live():
+    js, page = static_text("app.js"), static_text("index.html")
+    tour = re.search(r"const TOUR = \[(.*?)\n  \];", js, re.S).group(1)
+    assert re.findall(r"title: '([^']+)'", tour) == [
+        "Start with your idea", "Pick the rest", "Your image", "Free sketches (optional)", "Approve & create",
+        "Review tab"]
+    assert "{ anchor: '#tab-review', tab: 'review', title: 'Review tab'," in tour
+    assert ':id="\'tab-\' + t.id"' in page  # the tab links carry the ids the tour points at
+    tabs = re.search(r"const TABS = \[(.*?)\n  \];", js, re.S).group(1)
+    assert "{ id: 'review', label: 'Review' }," in tabs  # live today: not "later", not dimmed
+    avail = re.search(r"function tourAvailable\(i\) \{(.*?)\n  \}", js, re.S).group(1)
+    assert "tabLive(" in avail  # a stop on a tab is skipped while that tab is not live
+    live = re.search(r"function tabLive\(id\) \{(.*?)\n  \}", js, re.S).group(1)
+    assert "later" in live and "dim" in live

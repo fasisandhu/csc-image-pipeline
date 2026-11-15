@@ -8,8 +8,11 @@ from pathlib import Path
 from pipeline import ledger
 from pipeline.compile import load_json
 
+from .worker import DRAFTS
+
 DIR = Path(__file__).resolve().parent / "guide"
-PAGES = ("start-here", "read-the-checks", "rules")  # the only pages; nothing else is ever read from disk
+# the only pages, in the order the guide lists them; nothing else is ever read from disk
+PAGES = ("start-here", "make-a-website-image", "read-the-checks", "rules")
 
 
 def _num(x: float) -> str:
@@ -27,6 +30,7 @@ def values() -> dict[str, str]:
         "limits.regenerations_per_shot": _num(lim["regenerations_per_shot"]),
         "budget.cap_usd": f"{ledger.GEMINI_MONTHLY_CAP_USD:.2f}",
         "budget.ask_over_usd": f"{ledger.RUN_APPROVAL_USD:.2f}",
+        "sketches.count": _num(DRAFTS),
     }
 
 

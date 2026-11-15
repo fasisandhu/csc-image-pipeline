@@ -19,8 +19,6 @@ body { overflow-x:hidden; }
 .sum { position:sticky; top:16px; display:flex; flex-direction:column; gap:12px; }
 .note { margin:0; padding:8px 20px; font-size:12.5px; background:var(--accbg); color:var(--acc); border-bottom:1px solid #cfe9da; }
 .note.err { background:#fbf1dc; color:#7a5200; border-color:#ecd8a6; }
-.guide { background:#fff; border-bottom:1px solid var(--line); padding:12px 20px; }
-.guide-head { display:flex; justify-content:space-between; align-items:center; margin-bottom:8px; }
 .ask { background:#fff; border:1px solid var(--line); border-radius:14px; padding:14px 16px; box-shadow:0 1px 2px rgba(0,0,0,.04); }
 .ask .lbl { font-size:12px; color:var(--mut); margin-bottom:6px; }
 .ask .field { display:flex; gap:10px; }
@@ -200,3 +198,42 @@ button.disc { background:none; border:0; padding:0; font:inherit; font-size:12px
 .btn.done { padding:5px 14px; font-size:12px; }
 .sec h4:focus, .summary:focus { outline:none; }
 .ui .sec h4:focus-visible, .ui .summary:focus-visible { outline:2px solid var(--acc); outline-offset:2px; }
+/* task 8: the guide (a modal dialog: page list on the left, the page on the right) */
+dialog.guide { width:min(940px, calc(100vw - 40px)); height:min(660px, calc(100vh - 40px)); max-width:none; max-height:none; padding:0; border:1px solid var(--line); border-radius:16px; background:#fff; color:var(--ink); box-shadow:0 20px 60px rgba(0,0,0,.2); }
+dialog.guide::backdrop { background:rgba(23,23,26,.38); }
+.guide-box { display:flex; flex-direction:column; height:100%; }
+.guide-head { display:flex; align-items:center; gap:10px; padding:12px 16px; border-bottom:1px solid var(--line); }
+.guide-head h2 { flex:1; margin:0; font-size:15px; }
+.guide-head .btn { padding:6px 12px; font-size:12.5px; }
+.guide-main { flex:1; min-height:0; display:grid; grid-template-columns:210px minmax(0,1fr); }
+.guide-nav { overflow-y:auto; padding:12px 10px; background:#fbfaf8; border-right:1px solid var(--line); border-bottom-left-radius:16px; }
+.guide-nav ul { list-style:none; margin:0; padding:0; }
+.guide-nav li + li { margin-top:2px; }
+.guide-nav button { width:100%; padding:8px 10px; border:0; border-radius:8px; background:none; font:inherit; font-size:13px; text-align:left; color:var(--ink); cursor:pointer; }
+.guide-nav button:hover { background:#f1f0ec; }
+.guide-nav button[aria-current="page"] { background:var(--ink); color:#fff; font-weight:650; }
+.guide-nav .later { margin:14px 10px 0; line-height:1.5; }
+.guide-page { overflow-y:auto; padding:18px 24px 24px; }
+.guide-page .sec-note { margin-bottom:12px; }
+.guide-doc { max-width:660px; font-size:13.5px; line-height:1.6; }
+.guide-doc h2 { margin:0 0 10px; font-size:19px; }
+.guide-doc h3 { margin:20px 0 6px; font-size:14.5px; }
+.guide-doc h4, .guide-doc h5, .guide-doc h6 { margin:16px 0 4px; font-size:13.5px; }
+.guide-doc p, .guide-doc ul, .guide-doc ol, .guide-doc pre, .guide-doc blockquote { margin:0 0 10px; }
+.guide-doc ul, .guide-doc ol { padding-left:22px; }
+.guide-doc li { margin:3px 0; }
+.guide-doc code { padding:1px 4px; border-radius:4px; background:#f3f2ee; font:12.5px ui-monospace, Consolas, monospace; }
+.guide-doc pre { padding:10px; border-radius:8px; background:#f7f6f2; white-space:pre-wrap; overflow-wrap:anywhere; }
+.guide-doc blockquote { padding:4px 12px; border-left:3px solid var(--line); color:var(--mut); }
+.guide-doc a { color:var(--acc); }
+/* task 8: the first-visit tour (a ring and a card; neither takes clicks away from the page) */
+.tour:not(.on) { display:none; }
+.tour-ring { position:fixed; z-index:60; border-radius:12px; pointer-events:none; box-shadow:0 0 0 3px var(--acc), 0 0 0 9999px rgba(23,23,26,.22); transition:top .2s ease, left .2s ease, width .2s ease, height .2s ease; }
+.tour-card { position:fixed; z-index:61; top:12px; left:12px; width:310px; max-width:calc(100vw - 24px); padding:14px 16px; background:#fff; border:1px solid var(--line); border-radius:14px; box-shadow:0 12px 36px rgba(0,0,0,.2); transition:top .2s ease, left .2s ease; }
+.tour-card h2 { margin:2px 0 6px; font-size:14.5px; }
+.tour-card p { margin:0; font-size:13px; }
+.tour-card .tour-count { font-size:11px; font-weight:650; color:var(--acc); text-transform:uppercase; letter-spacing:.4px; }
+.tour-btns { display:flex; gap:8px; justify-content:flex-end; margin-top:12px; }
+.tour-btns .btn { padding:6px 12px; font-size:12.5px; }
+.tour-btns .skip { margin-right:auto; border-color:transparent; color:var(--mut); }
+@media (prefers-reduced-motion: reduce) { .tour-ring, .tour-card { transition:none; } }

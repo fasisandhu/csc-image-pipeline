@@ -100,6 +100,30 @@
     unchecked: 'Not being checked: lost touch with the studio (see Recent images).',
     changed: 'Your choices changed — check the cost again.',
   };
+  // the guide: the server's pages (studio/guide.py PAGES), in its order; the text comes from /api/guide/<id>
+  const GUIDE_PAGES = [
+    { id: 'start-here', title: 'Start here' },
+    { id: 'make-a-website-image', title: 'Make a website image' },
+    { id: 'read-the-checks', title: 'Read the checks' },
+    { id: 'rules', title: 'Rules' },
+  ];
+  const GUIDE_LATER = 'Coming later: client orders, costs and budget, when something goes wrong.';
+  const GUIDE_ERROR = "Couldn't load this page; check the studio is running, then try again.";
+  // the first-visit tour: one pointer per part of the builder; a step whose part is hidden is skipped
+  const TOUR = [
+    { anchor: '#idea', title: 'Start with your idea',
+      text: 'Type what you want in your own words and press Fill from my words. Or skip this and pick below.' },
+    { anchor: '#builder', title: 'Pick the rest',
+      text: 'Each section is one choice. Answered ones fold to one line; press Change to edit. A greyed option says why it can’t be used.' },
+    { anchor: '#summary', title: 'Your image',
+      text: 'Everything you chose, with the estimated cost. Open “Show the full prompt” to see what the pipeline wrote.' },
+    { anchor: '#btn-sketch', title: 'Free sketches (optional)',
+      text: 'Quick rough layouts at no cost. Click one to build on it. Sketches never go on the website.' },
+    { anchor: '#btn-create', title: 'Approve & create',
+      text: 'Makes the real image and shows it here with its caption. Big spends ask you first; the Guide has the exact rules.' },
+  ];
+  const TOUR_GAP = 12;  // px between the tour card and what it points at, and from the window edge
+  const TOUR_PAD = 6;  // px of the highlight ring around what it points at
 
   function plainObject(v) { return v && typeof v === 'object' && !Array.isArray(v) ? v : {}; }
   function same(a, b) { return JSON.stringify(a) === JSON.stringify(b); }
@@ -145,6 +169,62 @@
       : d.toLocaleDateString([], { day: 'numeric', month: 'short' });
   }
 
+  // --- guide Markdown: drawn as DOM nodes from marked's tokens -----------------------------------
+  // No HTML string from the Markdown ever reaches the page: every piece of text becomes a text node,
+  // tags come only from the fixed lists below, raw HTML in the Markdown shows as plain text, images
+  // show their alt text, and only an http(s) link becomes a link (in a new tab).
+  const ENTITIES = { amp: '&', lt: '<', gt: '>', quot: '"', '#39': "'" };
+  // marked escapes inline text and code for its own HTML output; text nodes need the plain characters
+  function plain(t) { return String(t === undefined || t === null ? '' : t).replace(/&(amp|lt|gt|quot|#39);/g, (m, k) => ENTITIES[k]); }
+  function textNode(t) { return document.createTextNode(t); }
+  function make(tag, kids) { const el = document.createElement(tag); el.append(...kids); return el; }
+  const INLINE_TAGS = { strong: 'strong', em: 'em', del: 'del' };
+  function inlineNodes(tokens) {
+    const out = [];
+    for (const t of Array.isArray(tokens) ? tokens : []) {
+      if ((t.type === 'text' || t.type === 'escape') && Array.isArray(t.tokens)) out.push(...inlineNodes(t.tokens));
+      else if (t.type === 'text' || t.type === 'escape') out.push(textNode(plain(t.text)));
+      else if (INLINE_TAGS[t.type]) out.push(make(INLINE_TAGS[t.type], inlineNodes(t.tokens)));
+      else if (t.type === 'codespan') out.push(make('code', [textNode(plain(t.text))]));
+      else if (t.type === 'br') out.push(document.createElement('br'));
+      else if (t.type === 'link') out.push(linkNode(t));
+      else if (t.type === 'image') out.push(textNode(plain(t.text)));
+      else out.push(textNode(String(t.raw || '')));  // raw HTML and anything unknown: its source, as text
+    }
+    return out;
+  }
+  function linkNode(t) {
+    const kids = inlineNodes(t.tokens);
+    if (!/^https?:\/\//i.test(String(t.href || ''))) return make('span', kids);  // the guide has no inner links
+    const a = make('a', kids);
+    a.href = t.href;
+    a.target = '_blank';
+    a.rel = 'noopener noreferrer';
+    return a;
+  }
+  function blockNodes(tokens) {
+    const out = [];
+    for (const t of Array.isArray(tokens) ? tokens : []) {
+      if (t.type === 'space') continue;
+      if (t.type === 'heading') out.push(make('h' + Math.min(6, Math.max(2, Number(t.depth) + 1 || 2)), inlineNodes(t.tokens)));
+      else if (t.type === 'paragraph') out.push(make('p', inlineNodes(t.tokens)));
+      else if (t.type === 'text') out.push(...inlineNodes([t]));  // the text of a tight list item
+      else if (t.type === 'list') {
+        const list = make(t.ordered ? 'ol' : 'ul', (t.items || []).map(it => make('li', blockNodes(it.tokens))));
+        if (t.ordered && Number(t.start) > 1) list.start = Number(t.start);
+        out.push(list);
+      } else if (t.type === 'blockquote') out.push(make('blockquote', blockNodes(t.tokens)));
+      else if (t.type === 'code') out.push(make('pre', [make('code', [textNode(String(t.text || ''))])]));
+      else if (t.type === 'hr') out.push(document.createElement('hr'));
+      else out.push(make('p', [textNode(String(t.raw || ''))]));  // raw HTML blocks and anything unknown: as text
+    }
+    return out;
+  }
+  function markdownNodes(md) {  // marked missing (vendor file not loaded): the Markdown as plain text
+    if (!window.marked || typeof window.marked.lexer !== 'function') return [make('pre', [textNode(String(md))])];
+    return blockNodes(window.marked.lexer(String(md)));
+  }
+
   // timers and request numbers: a reply is used only if no newer request was made since.
   // questionsOpen / previewOpen: the number of the newest request still in flight (0 if none).
   let questionsTimer = null, questionsSeq = 0, questionsOpen = 0;
@@ -155,6 +235,62 @@
   // filled in, so the next questions reply moves to the first gap only if the person did nothing since
   let touchSeq = 0, briefJump = null;
   let pollTimer = null, pollBusy = false, pollFails = 0;  // one status check of the active jobs at a time
+  // guide: page texts fetched while the guide is open (cleared on each open, so numbers stay current);
+  // guideSeq: only the newest page asked for is drawn
+  const guideCache = new Map();
+  let guideSeq = 0;
+  // tour: where the keyboard goes back to when it ends, and the listeners that keep the card in place
+  let tourReturn = null, tourFrame = 0, tourResize = null;
+
+  function guideDialog() { return document.getElementById('guide'); }
+  function guideButton() { return document.getElementById('guide-btn'); }
+  function tourAnchor(i) { return TOUR[i] ? document.querySelector(TOUR[i].anchor) : null; }
+  function tourAvailable(i) {  // a step is shown only while its part of the page is (never a pointer at nothing)
+    const el = tourAnchor(i);
+    return shown(el) && !el.closest('[inert], dialog:not([open])');
+  }
+  function tourStop(from, dir) {  // the next step in this direction whose part of the page is shown, else -1
+    for (let i = from + dir; i >= 0 && i < TOUR.length; i += dir) if (tourAvailable(i)) return i;
+    return -1;
+  }
+  // the card goes beside the visible part of what it points at: below, above, left, right, else inside
+  // its top right corner (a part taller than the window); the ring outlines that visible part
+  function placeTour() {
+    tourFrame = 0;
+    const st = window.Alpine.store('studio');
+    const tour = st.ui.tour, card = document.getElementById('tour-card'), ring = document.getElementById('tour-ring');
+    if (!tour || !card || !ring) return;
+    if (!tourAvailable(tour.i)) { st.tourNext(); return; }  // its part was hidden meanwhile: move on
+    const r = tourAnchor(tour.i).getBoundingClientRect();
+    const vw = document.documentElement.clientWidth, vh = window.innerHeight, m = TOUR_GAP;
+    const top = Math.max(r.top - TOUR_PAD, 4), bottom = Math.min(r.bottom + TOUR_PAD, vh - 4);
+    const left = Math.max(r.left - TOUR_PAD, 4), right = Math.min(r.right + TOUR_PAD, vw - 4);
+    Object.assign(ring.style, { top: top + 'px', left: left + 'px', width: Math.max(0, right - left) + 'px',
+                                height: Math.max(0, bottom - top) + 'px' });
+    const cw = card.offsetWidth, ch = card.offsetHeight;
+    const x = v => Math.max(m, Math.min(v, vw - cw - m)), y = v => Math.max(m, Math.min(v, vh - ch - m));
+    let at;
+    if (bottom + m + ch <= vh - m) at = [x(left), bottom + m];
+    else if (top - m - ch >= m) at = [x(left), top - m - ch];
+    else if (left - m - cw >= m) at = [left - m - cw, y(top)];
+    else if (right + m + cw <= vw - m) at = [right + m, y(top)];
+    else at = [x(right - cw - m), y(top + m)];
+    Object.assign(card.style, { left: at[0] + 'px', top: at[1] + 'px' });
+  }
+  function placeTourSoon() { if (!tourFrame) tourFrame = window.requestAnimationFrame(placeTour); }
+  function watchTour(on) {  // scrolling (the page or the summary column) and resizing move the card along
+    const opts = { capture: true, passive: true };
+    if (on) {
+      window.addEventListener('scroll', placeTourSoon, opts);
+      window.addEventListener('resize', placeTourSoon, opts);
+      if (typeof ResizeObserver === 'function') { tourResize = new ResizeObserver(placeTourSoon); tourResize.observe(document.body); }
+      return;
+    }
+    window.removeEventListener('scroll', placeTourSoon, opts);
+    window.removeEventListener('resize', placeTourSoon, opts);
+    if (tourResize) { tourResize.disconnect(); tourResize = null; }
+    if (tourFrame) { window.cancelAnimationFrame(tourFrame); tourFrame = 0; }
+  }
 
   // --- store ----------------------------------------------------------------------------------
   function createStudio() {
@@ -192,9 +328,11 @@
       panel: { loaded: false, error: '', lost: false },
       // budget: figures from /api/health
       budget: { gemini_usd: 0, cap_usd: 9, cf_neurons: 0, cf_cap: 9500, loaded: false, error: '' },
-      // ui: current tab, guide panel, tour (task 8)
+      // ui: current tab, guide panel, tour ({i}: the step shown, or null)
       ui: { tabs: TABS, tab: 'create', note: '', guideOpen: false, tourSeen: storage.get('tourSeen', false), tour: null,
             promptOpen: false },
+      // guide: the page shown in the guide, and its loading state
+      guide: { pages: GUIDE_PAGES, later: GUIDE_LATER, page: GUIDE_PAGES[0].id, loading: false, error: '' },
 
       init() {
         this.refreshBudget();
@@ -203,7 +341,8 @@
         if (c && typeof c === 'object') {
           Object.assign(this.builder.custom, { open: true, name: String(c.name || ''), hex: String(c.hex || '') });
         }
-        this.loadQuestions();
+        // the first-visit tour starts once the builder has drawn its first options (or said it couldn't)
+        this.loadQuestions().then(() => window.Alpine.nextTick(() => this.firstVisitTour()));
         this.loadJobs();
       },
 
@@ -235,9 +374,128 @@
         this.ui.note = '';
         this.ui.tab = tab.id;
       },
-      toggleGuide() { this.ui.guideOpen = !this.ui.guideOpen; },
       saveDraft() { storage.set('answers', this.answers); },
+
+      // --- guide: a modal dialog (the browser keeps the keyboard inside it; Escape closes it) ------
+      toggleGuide() { if (this.ui.guideOpen) this.closeGuide(); else this.openGuide(); },
+      openGuide() {
+        const d = guideDialog();
+        if (!d) return;
+        if (this.ui.tour) this.endTour(false);
+        guideCache.clear();
+        this.ui.guideOpen = true;
+        if (!d.open) d.showModal();
+        this.showGuidePage(this.guide.page);
+        window.Alpine.nextTick(() => {  // the keyboard starts on the page being read, in the page list
+          const cur = d.querySelector('.guide-nav [aria-current="page"]');
+          if (cur) cur.focus();
+        });
+      },
+      closeGuide() {
+        const d = guideDialog();
+        if (d && d.open) d.close();  // its close event (guideClosed) finishes the job
+        else this.guideClosed();
+      },
+      guideClosed() {  // Close, Escape or "Replay the tour": the keyboard goes back to "? Guide"
+        this.ui.guideOpen = false;
+        if (this.ui.tour) return;  // the tour has the keyboard now
+        const b = guideButton();
+        if (b) b.focus();
+      },
+      guideBackdrop(e) { if (e.target === guideDialog()) this.closeGuide(); },  // a click outside the box
+      isGuidePage(p) { return this.guide.page === p.id; },
+      async showGuidePage(id) {
+        if (!GUIDE_PAGES.some(p => p.id === id)) return;  // only the server's fixed pages are ever asked for
+        const seq = ++guideSeq;
+        const doc = document.getElementById('guide-doc');
+        Object.assign(this.guide, { page: id, error: '' });
+        let md = guideCache.get(id);
+        if (md === undefined) {
+          if (doc) doc.replaceChildren();  // never the last page's text under this page's name
+          this.guide.loading = true;
+          try {
+            const res = await fetch('/api/guide/' + encodeURIComponent(id));
+            if (!res.ok) throw new Error('guide ' + res.status);
+            md = await res.text();
+          } catch (e) {
+            if (seq === guideSeq) this.guide.error = GUIDE_ERROR;
+            return;
+          } finally {
+            if (seq === guideSeq) this.guide.loading = false;
+          }
+          guideCache.set(id, md);
+        }
+        if (seq !== guideSeq || !doc) return;
+        doc.replaceChildren(...markdownNodes(md));
+        const box = doc.closest('.guide-page');
+        if (box) box.scrollTop = 0;
+      },
+      replayTour() {
+        this.closeGuide();
+        this.startTour(guideButton());
+      },
+
+      // --- first-visit tour: Next / Back / Skip; Escape ends it; it never covers or blocks the page --
       markTourSeen() { this.ui.tourSeen = true; storage.set('tourSeen', true); },
+      firstVisitTour() {  // once per browser; once per page load at most when storage is unavailable
+        if (this.ui.tourSeen || this.ui.tour || this.ui.guideOpen) return;
+        this.startTour(null);
+      },
+      startTour(returnTo) {
+        if (this.ui.tour) return;
+        const i = tourStop(-1, 1);
+        if (i < 0) return;  // nothing on the page to point at
+        this.markTourSeen();
+        const from = returnTo || document.activeElement;
+        tourReturn = from && from !== document.body ? from : null;
+        this.ui.tour = { i };
+        watchTour(true);
+        this.showTourStep(i);
+      },
+      showTourStep(i) {
+        this.ui.tour.i = i;
+        const el = tourAnchor(i);
+        if (el) el.scrollIntoView({ block: 'nearest', behavior: scrollMode() });
+        // on the next frame, when the card is drawn: Alpine runs a nextTick made inside another nextTick
+        // (the first-visit start) at once, before the card is shown, and a hidden button takes no focus
+        window.Alpine.nextTick(() => window.requestAnimationFrame(() => {
+          if (!this.ui.tour) return;
+          placeTour();
+          const next = document.getElementById('tour-next');
+          if (next) next.focus({ preventScroll: true });
+        }));
+      },
+      tourNext() {
+        if (!this.ui.tour) return;
+        const j = tourStop(this.ui.tour.i, 1);
+        if (j < 0) this.endTour(true);
+        else this.showTourStep(j);
+      },
+      tourBack() {
+        if (!this.ui.tour) return;
+        const j = tourStop(this.ui.tour.i, -1);
+        if (j >= 0) this.showTourStep(j);
+      },
+      endTour(giveBack) {  // giveBack: put the keyboard back where it was (else on the idea box)
+        if (!this.ui.tour) return;
+        watchTour(false);
+        this.ui.tour = null;
+        const back = tourReturn;
+        tourReturn = null;
+        if (giveBack === false) return;
+        const target = back && back.isConnected && shown(back) ? back : document.getElementById('brief-text');
+        if (target) target.focus();  // brought into view if the tour scrolled away from it
+      },
+      tourEscape() { if (this.ui.tour) this.endTour(true); },
+      tourStep() { return this.ui.tour ? TOUR[this.ui.tour.i] : { title: '', text: '' }; },
+      tourCount() {  // counts only the steps whose part of the page is shown
+        if (!this.ui.tour) return '';
+        const avail = TOUR.map((s, i) => i).filter(tourAvailable);
+        const n = avail.indexOf(this.ui.tour.i) + 1;
+        return n ? 'Tip ' + n + ' of ' + avail.length : '';
+      },
+      tourHasBack() { return !!this.ui.tour && tourStop(this.ui.tour.i, -1) >= 0; },
+      tourNextLabel() { return this.ui.tour && tourStop(this.ui.tour.i, 1) < 0 ? 'Done' : 'Next'; },
 
       // --- builder: questions ---------------------------------------------------------------
       syncWaiting() {  // the summary dims and says "updating..." while this is true

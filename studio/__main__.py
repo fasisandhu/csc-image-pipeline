@@ -53,7 +53,7 @@ def main(port: int = PORT) -> int:
         with closing(db.connect()) as conn:
             n = db.mark_interrupted(conn)
         if n:
-            print(f"{n} job(s) were running when the server stopped; marked interrupted, not re-run")
+            print(f"{n} job(s) or review step(s) were running when the server stopped; marked, not re-run")
         Worker(db.connect).start()
         print(f"CSC Studio on http://{HOST}:{sock.getsockname()[1]} (Ctrl+C to stop)")  # uvicorn skips its own line for passed sockets
         try:

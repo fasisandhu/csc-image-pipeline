@@ -1,5 +1,5 @@
 {
-  "_note": "Shot types and scenes for the dashboard. Text is style-neutral: fit, shoulder, pockets and zip come from catalogue/ through the compiler, never from here. Keep every compiled prompt inside CLAUDE.md's 120-220 words (tests/test_specs.py checks every combination). On-model recipes take background and lighting from the chosen scene; packshots ignore the scene. requires_decoration: the shot has nothing to show without a design. pipeline/specs.py adds the catalogue's \"<shoulder> shoulder seams\" to must_show (in place of a generic \"the shoulder seams\") unless shows_shoulders is false: a framing that leaves the shoulders out.",
+  "_note": "Shot types and scenes for the dashboard. Text is style-neutral: fit, shoulder, pockets and zip come from catalogue/ through the compiler, never from here. Keep every compiled prompt at 120-190 words before prompt rules, so rules a person switches on fit inside CLAUDE.md's 220 (tests/test_specs.py checks every combination; switching a rule on checks the longest prompt in its scope). On-model recipes take background and lighting from the chosen scene; packshots ignore the scene. requires_decoration: the shot has nothing to show without a design. pipeline/specs.py adds the catalogue's \"<shoulder> shoulder seams\" to must_show (in place of a generic \"the shoulder seams\") unless shows_shoulders is false: a framing that leaves the shoulders out.",
   "recipes": {
     "packshot-front": {
       "label": "Packshot, front",
@@ -13,14 +13,14 @@
         "centre chest",
         "sleeve"
       ],
-      "purpose": "Front-view packshot of a single hoodie as a ghost-mannequin catalogue shot, body shape filled out",
+      "purpose": "Front ghost-mannequin packshot of a single hoodie, body shape filled out",
       "camera": {
         "angle": "straight on at chest height",
         "lens": "50mm",
-        "framing": "whole garment centred with even margins"
+        "framing": "whole garment centred, even margins"
       },
-      "lighting": "soft, even overhead softbox light showing the fleece texture",
-      "background": "seamless light grey backdrop with a soft shadow below the hem",
+      "lighting": "soft, even softbox light showing the fleece texture",
+      "background": "light grey seamless backdrop, soft shadow below the hem",
       "must_show": [
         "both drawcords with metal aglets",
         "the pocket openings",
@@ -42,14 +42,14 @@
         "full back",
         "sleeve"
       ],
-      "purpose": "Back-view packshot of a single hoodie as a ghost-mannequin catalogue shot, body shape filled out",
+      "purpose": "Back ghost-mannequin packshot of a single hoodie, body shape filled out",
       "camera": {
-        "angle": "straight on from behind at chest height",
+        "angle": "from behind at chest height",
         "lens": "50mm",
-        "framing": "whole garment centred with even margins"
+        "framing": "whole garment centred, even margins"
       },
-      "lighting": "soft, even overhead softbox light showing the fleece texture",
-      "background": "seamless light grey backdrop with a soft shadow below the hem",
+      "lighting": "soft, even softbox light showing the fleece texture",
+      "background": "light grey seamless backdrop, soft shadow below the hem",
       "must_show": [
         "the hood's centre seam",
         "the full back panel",
@@ -72,15 +72,15 @@
         "centre chest",
         "sleeve"
       ],
-      "purpose": "On-model front view showing the fit and heavyweight drape",
+      "purpose": "On-model front view",
       "camera": {
-        "angle": "at chest height, slightly off centre",
+        "angle": "chest height, slightly off centre",
         "lens": "85mm",
-        "framing": "framed head to mid-thigh"
+        "framing": "head to mid-thigh"
       },
       "lighting": "soft window-style key light from camera left",
       "background": "plain warm off-white studio wall",
-      "pose": "standing relaxed, one hand in a front pocket",
+      "pose": "standing, one hand in a front pocket",
       "must_show": [
         "the shoulder seams",
         "both drawcords"
@@ -101,15 +101,15 @@
         "full back",
         "sleeve"
       ],
-      "purpose": "On-model back view showing the fit and heavyweight drape",
+      "purpose": "On-model back view",
       "camera": {
-        "angle": "directly behind at chest height",
+        "angle": "behind at chest height",
         "lens": "85mm",
-        "framing": "framed head to mid-thigh"
+        "framing": "head to mid-thigh"
       },
       "lighting": "soft window-style key light from camera left",
       "background": "plain warm off-white studio wall",
-      "pose": "standing relaxed, back to camera, head turned slightly",
+      "pose": "back to camera, head turned",
       "must_show": [
         "the full back panel",
         "the hood"
@@ -134,14 +134,14 @@
         "full back",
         "sleeve"
       ],
-      "purpose": "Close-up detail shot of the decoration, showing its stitch or print texture and the surrounding fleece",
+      "purpose": "Close-up of the decoration showing its stitch or print texture and the surrounding fleece",
       "camera": {
-        "angle": "straight on, slightly above the decoration",
+        "angle": "straight on, slightly above",
         "lens": "100mm macro",
-        "framing": "the decoration filling most of the frame with a little fabric around it"
+        "framing": "the decoration filling most of the frame, a little fabric around it"
       },
-      "lighting": "soft raking side light showing the decoration and fleece texture",
-      "background": "the garment fabric fills the frame",
+      "lighting": "soft raking side light showing the texture",
+      "background": "garment fabric only",
       "must_show": [
         "the decoration crisp and fully in frame",
         "the fleece texture around it"
@@ -162,11 +162,11 @@
         "centre chest",
         "sleeve"
       ],
-      "purpose": "Flat-lay shot of a single hoodie, sleeves relaxed at the sides, body shape clearly visible",
+      "purpose": "Flat lay of a single hoodie, sleeves relaxed at the sides",
       "camera": {
         "angle": "straight down from above",
         "lens": "50mm",
-        "framing": "whole garment centred with even margins"
+        "framing": "whole garment centred, even margins"
       },
       "lighting": "soft, even overhead daylight showing the fleece texture",
       "background": "plain light concrete-grey surface",
@@ -184,23 +184,23 @@
   "scenes": {
     "studio-grey": {
       "label": "Studio grey",
-      "background": "seamless light grey studio backdrop",
-      "lighting": "soft, even softbox light with gentle front fill"
+      "background": "light grey studio backdrop",
+      "lighting": "soft, even softbox light"
     },
     "warm-studio": {
       "label": "Warm studio",
-      "background": "plain warm off-white studio wall",
-      "lighting": "soft window-style key light from camera left"
+      "background": "warm off-white wall",
+      "lighting": "soft window light from camera left"
     },
     "concrete-daylight": {
       "label": "Concrete and daylight",
-      "background": "unpainted concrete wall in an urban courtyard",
-      "lighting": "soft overcast daylight with gentle fill"
+      "background": "concrete wall, urban courtyard",
+      "lighting": "soft overcast daylight"
     },
     "warm-cafe": {
       "label": "Warm cafe",
-      "background": "softly blurred warm cafe interior",
-      "lighting": "warm window light with a soft amber interior glow"
+      "background": "blurred cafe interior",
+      "lighting": "warm window light, amber glow"
     }
   }
 }

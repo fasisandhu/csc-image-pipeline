@@ -8,7 +8,7 @@ import hashlib
 import json
 import re
 
-from .compile import REF_ROLES, ROOT, CompileError, is_missing, load_json, resolve_colour
+from .compile import REF_ROLES, ROOT, CompileError, compile_spec, is_missing, load_json, resolve_colour
 from .designs import design_for
 
 NO_TEXT, NO_OTHER_TEXT = "text or logos", "any other text or logos"
@@ -154,3 +154,50 @@ def build_spec(answers: dict, creative: dict | None = None) -> dict:
             "avoid": _avoid(recipe["avoid"], _decorated(answers)),
         },
     }
+
+
+def _words(text) -> int:
+    return len(str(text or "").split())
+
+
+def longest_answers() -> list[dict]:
+    """Answers for the longest prompt of every recipe x catalogue x decoration (none, or each placement with a set
+    maximum size) the dashboard offers. Every other choice is the one with the most words: cast description, palette
+    colour name, weight look, scene, design text and technique. A prompt's sections add up independently, so these are
+    the longest prompts there are (tests/test_specs.py checks this against every combination)."""
+    data = load_recipes()
+    cast_kit, palette = load_json("brand/cast.json")["cast"], load_json("brand/palette.json")["colours"]
+    designs = load_json("brand/designs/designs.json")["designs"]
+    cast = max(cast_kit, key=lambda k: _words(cast_kit[k]["description"]))
+    colour = max(palette, key=lambda k: _words(palette[k]["name"]))
+    design = max(designs, key=lambda d: _words(d.get("text")))["id"]
+    scenes = data["scenes"]
+    scene = max(scenes, key=lambda k: _words(scenes[k]["background"]) + _words(scenes[k]["lighting"]))
+    out = []
+    for path in sorted((ROOT / "catalogue").glob("*.json")):
+        cat = load_json(f"catalogue/{path.name}")
+        gsm = max(cat["gsm_options"], key=lambda g: _words(cat["weight_look"][str(g)]))
+        technique = max(cat["decoration_types"], key=_words)
+        for rid, recipe in data["recipes"].items():
+            base = {"catalogue": cat["id"], "colour": colour, "gsm": gsm, "recipe": rid}
+            if recipe["model"]:
+                base.update(cast=cast, scene=scene)
+            decos = [] if recipe.get("requires_decoration") else [{"decoration": "none"}]
+            for p in recipe["placements"]:
+                mx = cat["decoration_placements"].get(p, {}).get("max_cm")
+                if isinstance(mx, (int, float)) and not isinstance(mx, bool):
+                    decos.append({"decoration": "design", "design": design, "technique": technique,
+                                  "placement": p, "size_cm": mx})
+            out += [{**base, **d} for d in decos]
+    return out
+
+
+def longest_prompt_words(scope: str = "all") -> int:
+    """The most words (as compile_spec counts them, active prompt rules included) of any dashboard prompt a rule
+    with this applies_to reaches: "all", "packshot", "on_model" or a catalogue id."""
+    recipes = load_recipes()["recipes"]
+
+    def reached(a: dict) -> bool:
+        model = bool(recipes[a["recipe"]]["model"])
+        return scope in ("all", a["catalogue"]) or scope == ("on_model" if model else "packshot")
+    return max((compile_spec(build_spec(a)).word_count for a in longest_answers() if reached(a)), default=0)

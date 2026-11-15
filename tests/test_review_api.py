@@ -18,7 +18,8 @@ from PIL import Image
 
 from pipeline import compile as compiler
 from pipeline import finish, ledger, qa
-from pipeline.compile import compile_spec, load_json
+from pipeline import specs as specs_mod
+from pipeline.compile import WORD_RANGE, compile_spec, load_json
 from pipeline.specs import build_spec
 from studio import app as app_mod
 from studio import db, library
@@ -32,6 +33,7 @@ PLAIN = {"purpose": "website", "catalogue": "pullover-oversized", "colour": "oli
 ON_MODEL = {**PLAIN, "recipe": "on-model-front", "cast": "Maya", "scene": "warm-studio"}
 DECORATED = {**PLAIN, "decoration": "design", "design": "oakmere-athletic", "technique": "3D puff embroidery",
              "placement": "centre chest", "size_cm": 22}
+TEAL = {**PLAIN, "colour": {"name": "Teal", "hex": "#1F6F78"}}
 CAPTIONS = load_json("brand/brand.json")["captions"]
 STYLE_BLOCK = load_json("brand/brand.json")["style_block"]
 ALREADY = {"error": "already decided"}
@@ -346,6 +348,36 @@ def test_reject_creates_pending_rule_with_draft(env, client):
     assert (rule["status"], rule["prompt_text"], rule["applies_to"]) == ("pending", "", "all")
 
 
+def test_reject_records_both_or_neither_and_a_lost_draft_is_no_error(env, client, monkeypatch):
+    j = env.final()
+
+    def no_rejected_event(e):
+        if e.get("event") == "rejected":
+            raise OSError("disk full")
+        return env.record(e)
+
+    def broken(*args, **kwargs):
+        raise OSError("disk full")
+    for where, name, fn in ((ledger, "record", no_rejected_event), (compiler, "save_rules", broken)):
+        with monkeypatch.context() as m:
+            m.setattr(where, name, fn)
+            r = post(client, j.id, "reject", {"note": "too dark"})
+        assert (r.status_code, r.json()) == (500, {"error": app_mod.NOT_SAVED}), name
+        assert job(j.id)["review"] == "ready" and not env.events("rejected"), name
+        assert compiler.load_rules()["rules"] == [], name  # the rule goes with the rejection it came from
+    assert not env.brain.calls
+
+    # the brain's draft cannot be stored: the rejection stands and the rule waits for the person's words
+    with monkeypatch.context() as m:
+        m.setattr(library, "store_draft", broken)
+        r = post(client, j.id, "reject", {"note": "too dark"})
+    assert r.status_code == 200, r.text
+    assert job(j.id)["review"] == "rejected" and len(env.events("rejected")) == 1
+    assert r.json()["rule"] | {"date": None} == {
+        "index": 0, "status": "pending", "note": "too dark", "prompt_text": "", "applies_to": "all",
+        "from_shot": j.sid, "date": None, "activated_by": None, "dismissed_by": None}
+
+
 def test_draft_rule_one_positive_sentence_and_known_scope():
     brain = FakeBrain()
     brain.answer = {"prompt_text": '  "The hood stands up\n in a full, rounded shape."  ', "applies_to": "zip"}
@@ -510,9 +542,68 @@ def test_anchor_writes_png_and_needs_replace(env, client):
     assert r.status_code == 200 and target.read_bytes() != before
     assert job(b.id)["review"] == "anchor" and env.events("anchor_approved")[-1]["replaced"] is True
     assert worker_mod.anchor_source(build_spec(DECORATED)) == ROOT / b.file
+    refs = {i["id"]: i["reference"] for i in client.get("/api/library").json()["items"]}
+    assert refs == {a.id: False, b.id: True}  # the replaced packshot's image is no longer the reference
 
     teal = env.final({**PLAIN, "colour": {"name": "Teal", "hex": "#1F6F78"}})
     assert post(client, teal.id, "anchor").json()["anchor"] == "pullover-oversized_teal-1f6f78_380_front.png"
+
+
+def test_anchor_needs_a_note_from_needs_person_and_an_image_in_finals(env, client):
+    n = env.final(PLAIN, review="needs_person", reason="The AI visual review did not answer.")
+    item = client.get(f"/api/reviews/{n.id}").json()
+    assert item["actions"]["anchor"] is True and item["actions"]["note_required"] is True
+    r = post(client, n.id, "anchor", {"replace": True})
+    assert (r.status_code, r.json()) == (422, {"error": app_mod.NOTE_NEEDED})
+    assert job(n.id)["review"] == "needs_person" and not env.anchors.exists() and not env.events("approved")
+    r = post(client, n.id, "anchor", {"note": "garment checked by eye"})
+    assert r.status_code == 200 and env.events("approved")[-1]["note"] == "garment checked by eye"
+
+    # set aside by the checks (moved to out/reject): never a colour's reference packshot, with a note or not
+    gone = env.final(TEAL, review="needs_person", reason="The automatic repairs are used up; please look.")
+    with closing(db.connect()) as conn:
+        db.set_step(conn, steps(gone.id)[0]["id"], "done", output=env.move(gone.file), result=check(nxt="flag"))
+    assert client.get(f"/api/reviews/{gone.id}").json()["actions"]["anchor"] is False
+    for body in ({"note": "fine"}, {"note": "fine", "replace": True}):
+        r = post(client, gone.id, "anchor", body)
+        assert r.status_code == 409 and "set aside" in r.json()["error"], r.text
+    assert job(gone.id)["review"] == "needs_person"
+    assert sorted(p.name for p in env.anchors.iterdir()) == [ANCHOR]
+    assert [e["file"] for e in env.events("anchor_approved")] == [n.file]
+
+
+def test_anchor_failure_puts_back_the_file_and_the_review(env, client, monkeypatch):
+    a = env.final(PLAIN, colour=(90, 90, 60))
+    assert post(client, a.id, "anchor").status_code == 200
+    target = env.anchors / ANCHOR
+    before = target.read_bytes()
+
+    def broken(*args, **kwargs):
+        raise OSError("disk full")
+
+    def no_anchor_event(e):
+        if e.get("event") == "anchor_approved":
+            raise OSError("disk full")
+        return env.record(e)
+    for where, name, fn in ((library.Image, "open", broken), (finish, "record_verdict", broken),
+                            (ledger, "record", no_anchor_event)):
+        b = env.final(PLAIN, colour=(150, 40, 40))
+        with monkeypatch.context() as m:
+            m.setattr(where, name, fn)
+            r = post(client, b.id, "anchor", {"replace": True})
+        assert (r.status_code, r.json()) == (500, {"error": app_mod.NOT_SAVED}), name
+        assert target.read_bytes() == before and job(b.id)["review"] == "ready", name
+        assert sorted(p.name for p in env.anchors.iterdir()) == [ANCHOR], name  # no temporary or backup file
+        assert [e["file"] for e in env.events("anchor_approved")] == [a.file], name
+    assert worker_mod.anchor_source(build_spec(DECORATED)) == ROOT / a.file
+
+    # no reference packshot for this colour before: a failure leaves none
+    teal = env.final(TEAL)
+    with monkeypatch.context() as m:
+        m.setattr(finish, "record_verdict", broken)
+        assert post(client, teal.id, "anchor").status_code == 500
+    assert sorted(p.name for p in env.anchors.iterdir()) == [ANCHOR] and job(teal.id)["review"] == "ready"
+    assert post(client, teal.id, "anchor").status_code == 200  # and the next click works
 
 
 # --- rules ---------------------------------------------------------------------------------------
@@ -563,8 +654,38 @@ def test_rules_activate_validates_text_and_scope(env, client):
     assert r.json()["rule"]["dismissed_by"] == "owner"
     assert client.post("/api/rules/1/activate", json={"prompt_text": "x", "applies_to": "all"}).status_code == 409
     r = client.post("/api/rules/2/activate", json={"prompt_text": " ".join(["snug"] * 40), "applies_to": "all"})
+    assert r.status_code == 409 and "too long" in r.json()["error"]
+    r = client.post("/api/rules/2/activate", json={"prompt_text": "The cuffs sit snug at the wrist.",
+                                                   "applies_to": "on_model"})
     assert r.status_code == 200
     assert [x["status"] for x in client.get("/api/rules").json()["rules"]] == ["active", "dismissed", "active"]
+
+
+def test_rule_activation_keeps_every_prompt_inside_220_words(env, client):
+    for note in ("hood flat", "cuffs loose", "colour off"):
+        post(client, env.final().id, "reject", {"note": note})
+
+    def words(n):
+        return " ".join(["snug"] * n)
+
+    def too_long(n):
+        return {"error": f"This rule would make some prompts too long; keep it to {n} words or fewer."}
+    room = WORD_RANGE[1] - specs_mod.longest_prompt_words("all")
+    assert 0 < room < 40
+    r = client.post("/api/rules/0/activate", json={"prompt_text": words(room + 1), "applies_to": "all"})
+    assert (r.status_code, r.json()) == (409, too_long(room))
+    assert compiler.load_rules()["rules"][0]["status"] == "pending"
+    r = client.post("/api/rules/0/activate", json={"prompt_text": words(room), "applies_to": "all"})
+    assert r.status_code == 200
+
+    # the next rule gets only what is left in its own scope
+    left = WORD_RANGE[1] - specs_mod.longest_prompt_words("packshot")
+    assert 0 < left < room
+    r = client.post("/api/rules/1/activate", json={"prompt_text": words(left + 1), "applies_to": "packshot"})
+    assert (r.status_code, r.json()) == (409, too_long(left))
+    r = client.post("/api/rules/1/activate", json={"prompt_text": words(left), "applies_to": "packshot"})
+    assert r.status_code == 200
+    assert specs_mod.longest_prompt_words("all") <= WORD_RANGE[1]
 
 
 def test_activated_rule_reaches_compiled_prompts_of_its_scope_only(env, client):
@@ -608,6 +729,9 @@ def test_library_lists_only_approved_with_record(env, client):
     env.record({"shot_id": f.sid, "phase": "repair", "status": "ok", "file": newer, "root": f.file, "cost_usd": 0.1,
                 "provider": "gemini", "tier": "standard"})
     env.step(f.id, "repair", f.file, newer, code="hood_shape", cost=0.1)
+    undone = env.final(PLAIN)                            # approved with the CLI, then rejected
+    env.record({"event": "approved", "file": undone.file, "shot_id": undone.sid, "by": "user", "note": ""})
+    env.record({"event": "rejected", "file": undone.file, "shot_id": undone.sid, "by": "user", "note": "no"})
     g = env.final(PLAIN, user="teammate")               # one shared library
     post(client, g.id, "anchor")
     teal = env.final({**PLAIN, "colour": {"name": "Teal", "hex": "#1F6F78"}})
@@ -650,6 +774,11 @@ def test_export_requires_approval_and_returns_files(env, client):
     assert r.status_code == 409 and "approve" in r.json()["error"].lower()
     assert not (ROOT / "out" / "export" / j.sid).exists()
     assert client.post("/api/library/9999/export", json={}).status_code == 404
+    gone = env.final(PLAIN)
+    post(client, gone.id, "approve")
+    (ROOT / gone.file).unlink()
+    r = client.post(f"/api/library/{gone.id}/export", json={})
+    assert (r.status_code, r.json()) == (404, NOT_FOUND)
 
     post(client, j.id, "approve")
     r = client.post(f"/api/library/{j.id}/export", json={"pdf": False})
@@ -669,7 +798,7 @@ def test_export_requires_approval_and_returns_files(env, client):
     assert got.status_code == 200 and got.headers["content-type"] == "application/pdf"
     assert got.headers["content-disposition"].startswith("attachment")
     assert client.get(f"/api/files/{base}.json").json() == NOT_FOUND  # the record names repo paths
-    (item,) = client.get("/api/library").json()["items"]
+    (item,) = [i for i in client.get("/api/library").json()["items"] if i["id"] == j.id]
     assert item["export"] == {"files": body["files"], "pdf": body["pdf"], "alt": body["alt"],
                               "caption": body["caption"]}
 

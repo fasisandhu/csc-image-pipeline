@@ -1,3 +1,4 @@
+import json
 import re
 import uuid
 
@@ -88,9 +89,13 @@ def test_flat_lay_offers_only_front_placements():
     assert "full back" not in load_recipes()["recipes"]["flat-lay"]["placements"]
 
 
+RULE_FREE_MAX = 190  # without prompt rules: leaves 30 of CLAUDE.md's 220 words for the rules a person switches on
+
+
 def test_every_combination_inside_word_range():
-    """CLAUDE.md: 120-220 words. Longest cast description, longest palette colour name, longest design
-    text and technique; every GSM (its weight look changes the length)."""
+    """CLAUDE.md: 120-220 words, and at most RULE_FREE_MAX before any prompt rule is added. Longest cast
+    description, longest palette colour name, longest design text and technique; every GSM (its weight look changes
+    the length)."""
     cast = max(load_json("brand/cast.json")["cast"].items(), key=lambda kv: len(kv[1]["description"].split()))[0]
     palette = load_json("brand/palette.json")["colours"]
     colour = max(palette, key=lambda k: len(palette[k]["name"].split()))
@@ -102,9 +107,29 @@ def test_every_combination_inside_word_range():
     for a in combos(scenes, cast, colour, lambda cat: cat["gsm_options"], design, technique):
         c = compile_spec(build_spec(a))
         counts.append(c.word_count)
-        if not WORD_RANGE[0] <= c.word_count <= WORD_RANGE[1]:
+        if not WORD_RANGE[0] <= c.word_count <= RULE_FREE_MAX:
             outside.append((c.word_count, a))
     assert counts and not outside, outside[:5]
+    # the scope check run when a rule is switched on finds the same longest prompt
+    assert specs_mod.longest_prompt_words("all") == max(counts)
+
+
+def test_longest_prompt_words_per_scope_and_with_rules(isolated_prompt_rules):
+    on_model, packshot = specs_mod.longest_prompt_words("on_model"), specs_mod.longest_prompt_words("packshot")
+    assert specs_mod.longest_prompt_words("all") == max(on_model, packshot)
+    styles = [specs_mod.longest_prompt_words(c) for c in CATALOGUES]
+    assert max(styles) == specs_mod.longest_prompt_words("all")
+    rule = "The hood stands up in a full, rounded shape."  # 9 words, on packshots only
+    isolated_prompt_rules.write_text(json.dumps({"rules": [
+        {"status": "active", "applies_to": "packshot", "prompt_text": rule}]}), encoding="utf-8")
+    assert specs_mod.longest_prompt_words("packshot") == packshot + 9
+    assert specs_mod.longest_prompt_words("on_model") == on_model
+
+
+def test_tests_never_read_the_live_prompt_rules():
+    from pipeline import compile as compiler
+    assert compiler.RULES_PATH != compiler.ROOT / "brand" / "prompt_rules.json"
+    assert compiler.load_rules() == {"rules": []}
 
 
 def test_design_raises_tier_and_fills_decoration():

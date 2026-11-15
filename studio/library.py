@@ -13,9 +13,11 @@ from __future__ import annotations
 import json
 import os
 import re
+import shutil
 import threading
 import uuid
 from pathlib import Path
+from typing import Callable
 
 from PIL import Image
 
@@ -32,6 +34,7 @@ ANCHORS_REL = "refs/anchors"             # the same folder as recorded in the le
 ANCHOR_LOCK = threading.Lock()  # a reference packshot is written by one request at a time: "exists" holds meanwhile
 RULES_LOCK = threading.Lock()   # brand/prompt_rules.json: one read-modify-write at a time in this server
 ACTIONABLE = ("ready", "needs_person")  # where a person's verdict or change request starts from
+FINALS_DIR = ROOT / "out" / "finals"
 FRONT = "packshot-front"
 
 # Plain words for the reason codes in brand/repairs.json: "Fixed: the drawcords", "Fix the drawcords".
@@ -52,6 +55,7 @@ FROM_SKETCH = ("This image was built on a sketch, so it cannot become a referenc
                "a reference packshot's garment comes only from our catalogue.")
 FROM_COMPOSITE = "A logo placement cannot become a reference packshot."
 NO_RECORD = "This image has no generation record, so it cannot become a reference packshot."
+SET_ASIDE = "This image was set aside by the checks, so it cannot become a reference packshot."
 
 
 def _public(text):
@@ -135,15 +139,23 @@ def anchor_name(spec: dict) -> str:
     return f"{g['catalogue']}_{colour_id(g['colour'])}_{int(g['gsm'])}_front.png"
 
 
-def anchor_refusal(job: dict, entry: dict | None) -> str | None:
+def in_finals(path: str | None) -> bool:
+    """Whether a repo-relative image path is under out/finals (where a render the checks set aside is not)."""
+    return bool(path) and (ROOT / path).resolve().is_relative_to(FINALS_DIR.resolve())
+
+
+def anchor_refusal(job: dict, latest: str | None, entry: dict | None) -> str | None:
     """Why this job's latest image cannot become its colour's reference packshot, in plain words; None if it can.
-    Only a plain packshot-front final made without a sketch, from a logged render that is no logo placement."""
+    Only a plain packshot-front final made without a sketch, from a logged render in out/finals (not one the checks
+    set aside) that is no logo placement. Every later shot of the colour copies it as "the exact garment"."""
     answers = job.get("answers") or {}
     shot = (job.get("spec") or {}).get("shot") or {}
     if answers.get("recipe") != FRONT or answers.get("decoration") != "none" or shot.get("decoration"):
         return NOT_PLAIN
     if job.get("layout"):
         return FROM_SKETCH
+    if not in_finals(latest):
+        return SET_ASIDE
     if entry is None:
         return NO_RECORD
     if _composite_made(entry):
@@ -155,24 +167,54 @@ def anchor_exists(spec: dict) -> bool:
     return (ANCHORS_DIR / anchor_name(spec)).exists()
 
 
-def write_anchor(image: Path, name: str, replace: bool) -> bool | None:
-    """Save `image` as PNG at ANCHORS_DIR/name: a temporary file, then a replace, so find_anchor never sees half a
-    file. Returns whether an existing file was replaced; None (nothing written) when one exists and `replace` is
-    not set."""
+def publish_anchor(image: Path, name: str, replace: bool, record: Callable[[bool], None]) -> bool | None:
+    """Save `image` as PNG at ANCHORS_DIR/name and run record(replaced) to log it, as one step under ANCHOR_LOCK (so
+    the log follows the order of the file writes). The PNG goes to a temporary file, then replaces the target, so
+    find_anchor never sees half a file. If anything fails, the earlier file is put back (from a backup), or the new
+    one removed when there was none, and the error raised. Returns whether an existing file was replaced; None
+    (nothing written) when one exists and `replace` is not set."""
     target = ANCHORS_DIR / name
     with ANCHOR_LOCK:
         existed = target.exists()
         if existed and not replace:
             return None
         target.parent.mkdir(parents=True, exist_ok=True)
-        tmp = target.with_name(f".{name}.{uuid.uuid4().hex[:8]}.tmp")
+        tag = uuid.uuid4().hex[:8]
+        tmp, backup = target.with_name(f".{name}.{tag}.tmp"), target.with_name(f".{name}.{tag}.bak")
+        written = keep_backup = False
         try:
+            if existed:
+                shutil.copy2(target, backup)
             with Image.open(image) as im:
                 im.convert("RGB").save(tmp, "PNG")
             os.replace(tmp, target)
+            written = True
+            record(existed)
+        except BaseException:
+            try:
+                if written and existed:
+                    os.replace(backup, target)
+                elif written:
+                    target.unlink(missing_ok=True)
+            except OSError:  # could not put it back: the earlier file stays beside it for a person to restore
+                keep_backup = True
+            raise
         finally:
             tmp.unlink(missing_ok=True)
+            if not keep_backup:
+                backup.unlink(missing_ok=True)
     return existed
+
+
+def current_anchor_source(spec: dict) -> str | None:
+    """The render the colour's reference packshot file was last written from (its latest anchor_approved event),
+    while that file exists."""
+    name = anchor_name(spec)
+    if not (ANCHORS_DIR / name).exists():
+        return None
+    events = [e for e in ledger.entries() if e.get("event") == "anchor_approved"
+              and e.get("anchor") == f"{ANCHORS_REL}/{name}"]
+    return events[-1].get("file") if events else None
 
 
 # --- checks in plain words -----------------------------------------------------------------------
@@ -269,10 +311,8 @@ def review_item(job: dict, steps: list[dict]) -> dict:
     entry = ledger.find(latest) if latest else None
     review, running = job.get("review"), any(s["status"] in ("queued", "running") for s in steps)
     limits = limits_left(entry, shot_id)
-    refusal = anchor_refusal(job, entry)
+    refusal = anchor_refusal(job, latest, entry)
     open_ = review in ACTIONABLE
-    finals = (ROOT / "out" / "finals").resolve()
-    in_finals = bool(served(latest)) and (ROOT / latest).resolve().is_relative_to(finals)  # the checks run there
     codes = change_codes(spec)
     return {
         "id": job["id"], "user": job["user"], "created": job["created"], "updated": job["updated"],
@@ -289,16 +329,22 @@ def review_item(job: dict, steps: list[dict]) -> dict:
             "anchor": open_ and refusal is None,
             "anchor_exists": refusal is None and anchor_exists(spec),
             "change": open_ and not running and entry is not None and limits["repairs"] > 0 and bool(codes),
-            "check": review in (None, "needs_person") and not running and in_finals,
+            "check": (review in (None, "needs_person") and not running and bool(served(latest))
+                      and in_finals(latest)),
         },
         "changes": [{"code": c, "label": change_label(c)} for c in codes],
     }
 
 
 # --- library -------------------------------------------------------------------------------------
-def _approval(latest: str | None) -> dict | None:
-    events = ledger.events(latest, "approved") if latest else []
-    return events[-1] if events else None
+def approval(latest: str | None) -> dict | None:
+    """The image's approval: its latest `approved` ledger event, unless a rejection was recorded after it."""
+    if not latest:
+        return None
+    name = Path(latest).name
+    verdicts = [e for e in ledger.entries() if e.get("event") in ("approved", "rejected")
+                and Path(e.get("file", "")).name == name]
+    return verdicts[-1] if verdicts and verdicts[-1]["event"] == "approved" else None
 
 
 def _facts(job: dict) -> dict:
@@ -348,13 +394,22 @@ def _width(path: str) -> int | None:
     return int(m.group(1)) if m else None
 
 
+def _is_reference(job: dict, latest: str) -> bool:
+    """Whether this image is what its colour's reference packshot file was written from (a replaced one is not)."""
+    try:
+        source = current_anchor_source(job["spec"])
+    except (KeyError, TypeError, ValueError):
+        return False
+    return bool(source) and Path(source).name == Path(latest).name
+
+
 def library_item(job: dict, steps: list[dict]) -> dict | None:
-    """A job whose latest image has an `approved` ledger event, with its record; None for any other job.
-    Call inside ledger.snapshot()."""
+    """A job whose latest image is approved (an `approved` ledger event, no rejection after it), with its record;
+    None for any other job. Call inside ledger.snapshot()."""
     from .app import caption_for  # lazy: app imports this module
     latest = latest_image(job, steps)
-    approval = _approval(latest)
-    if approval is None:
+    approved = approval(latest)
+    if approved is None:
         return None
     entry = ledger.find(latest) or {}
     facts = _facts(job)
@@ -362,9 +417,9 @@ def library_item(job: dict, steps: list[dict]) -> dict | None:
         "id": job["id"], "shot_id": ((job.get("spec") or {}).get("shot") or {}).get("shot_id"),
         "words": shot_words(job), "caption": caption_for(job.get("answers")), "image": served(latest),
         **facts, "ai_model": entry.get("model"),
-        "reference": job.get("review") == "anchor" or bool(ledger.events(latest, "anchor_approved")),
+        "reference": _is_reference(job, latest),
         "cost_usd": cost_so_far(job, steps),
-        "approved_by": _public(approval.get("by")), "approved_at": approval.get("ts"),
+        "approved_by": _public(approved.get("by")), "approved_at": approved.get("ts"),
         "prompt": _prompt(job), "export": export_record(latest),
     }
 

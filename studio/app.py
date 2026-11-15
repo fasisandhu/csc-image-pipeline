@@ -22,9 +22,9 @@ from pydantic import BaseModel, Field, StrictBool
 
 from pipeline import compile as compiler
 from pipeline import finish, ledger, qa
-from pipeline.compile import ROOT, CompileError, compile_spec, load_json
+from pipeline.compile import ROOT, WORD_RANGE, CompileError, compile_spec, load_json
 from pipeline.providers import ProviderError
-from pipeline.specs import build_spec, find_anchor, load_recipes
+from pipeline.specs import build_spec, find_anchor, load_recipes, longest_prompt_words
 
 from . import db, guide, library
 from .brain import BrainError, get_brain
@@ -69,6 +69,8 @@ APPROVE_FIRST = "Approve this image first: nothing is exported without approval.
 RULE_WORDS = "A rule needs 1 to 40 words."
 RULE_SCOPE = "Pick where the rule applies."
 RULE_DONE = {"active": "This rule is already switched on.", "dismissed": "This rule was dismissed."}
+RULE_TOO_LONG = "This rule would make some prompts too long; keep it to {n} words or fewer."
+IMAGE_GONE = "image not found"  # the files route's words: the image or its record is missing
 FOLDERS = re.compile(r"(?:[\w.:~-]*[/\\])+(?=[\w.~-])")  # the folder part of a path, "/" or "\"
 SETTING_NAMES = re.compile(r"\b(?=STUDIO_|[A-Z0-9_]*(?:KEY|TOKEN|SECRET|ACCOUNT_ID))[A-Z][A-Z0-9_]{2,}\b")
 log = logging.getLogger(__name__)
@@ -493,9 +495,23 @@ def reject(job_id: int, body: NoteIn, user: str = Depends(current_user)):
             log.exception("rejection of job %s not recorded", job_id)
             _undo(conn, job, "rejected")
             return JSONResponse({"error": NOT_SAVED}, 500)
-    rule = library.store_draft(index, note, _draft(note, user, job)) if index is not None else None
+    rule = _drafted_rule(index, note, user, job) if index is not None else None
     with closing(db.connect()) as conn:
         return {"item": _item(conn, job_id), "rule": library.public_rule(index, rule) if rule else None}
+
+
+def _drafted_rule(index: int, note: str, user: str, job: dict) -> dict | None:
+    """The rejection's pending rule with the brain's draft on it. The rejection is already recorded, so a draft
+    that cannot be made or stored only leaves the rule as it is, for the person to write."""
+    try:
+        return library.store_draft(index, note, _draft(note, user, job))
+    except Exception:
+        log.exception("rule draft for rule %s not stored", index)
+    try:
+        rules = compiler.load_rules()["rules"]
+        return rules[index] if 0 <= index < len(rules) else None
+    except (OSError, ValueError):
+        return None
 
 
 @app.post("/api/reviews/{job_id}/change")
@@ -539,8 +555,7 @@ def recheck(job_id: int):
         if review == "ready":
             return JSONResponse({"error": ALREADY_CHECKED}, 409)
         latest = _latest(conn, job)
-        finals = (ROOT / "out" / "finals").resolve()
-        if not latest or not (ROOT / latest).is_file() or not (ROOT / latest).resolve().is_relative_to(finals):
+        if not latest or not (ROOT / latest).is_file() or not library.in_finals(latest):
             return JSONResponse({"error": SET_ASIDE}, 409)
         entry = ledger.find(latest)
         if entry is None or entry.get("shot_id") != job["spec"]["shot"]["shot_id"]:
@@ -555,16 +570,21 @@ def recheck(job_id: int):
 @app.post("/api/reviews/{job_id}/anchor")
 def approve_anchor(job_id: int, body: AnchorIn, user: str = Depends(current_user)):
     """Approve the latest image as its colour's reference packshot: only a plain packshot-front final made without a
-    sketch. Written as refs/anchors/<catalogue>_<colour_id>_<gsm>_front.png; an existing one needs replace."""
+    sketch, still in out/finals; from "needs_person" only with a note. Written as
+    refs/anchors/<catalogue>_<colour_id>_<gsm>_front.png; an existing one needs replace. The file and its two ledger
+    records (approved, anchor_approved) are one step: if any fails, the earlier file and the review are put back."""
+    note = body.note.strip()
     with closing(db.connect()) as conn:
         job = _final(conn, job_id)
         if job is None:
             return _no_final(job_id)
         latest = _latest(conn, job)
         with ledger.snapshot():
-            refusal = library.anchor_refusal(job, ledger.find(latest) if latest else None)
+            refusal = library.anchor_refusal(job, latest, ledger.find(latest) if latest else None)
         if refusal:
             return JSONResponse({"error": refusal}, 409)
+        if job["review"] == "needs_person" and not note:
+            return JSONResponse({"error": NOTE_NEEDED}, 422)
         if job["review"] not in library.ACTIONABLE:
             return _refused(conn, job_id)
         if not _recorded(latest):
@@ -575,21 +595,24 @@ def approve_anchor(job_id: int, body: AnchorIn, user: str = Depends(current_user
         exists = {"error": ANCHOR_EXISTS, "anchor_exists": True}
         if (library.ANCHORS_DIR / name).exists() and not body.replace:
             return JSONResponse(exists, 409)
-        if not db.set_review(conn, job_id, "anchor", only_from=library.ACTIONABLE):
+        if not db.set_review(conn, job_id, "anchor", only_from=library.ACTIONABLE if note else ("ready",)):
             return _refused(conn, job_id)
+
+        def record(replaced: bool) -> None:
+            # approved first: if the second record fails, what is left is a person's approval of this image, never
+            # an anchor_approved event that the chain's logo placement would follow (worker.anchor_source)
+            finish.record_verdict(ROOT / latest, "approved", note, by=user)
+            ledger.record({"event": "anchor_approved", "file": latest, "shot_id": job["spec"]["shot"]["shot_id"],
+                           "anchor": f"{library.ANCHORS_REL}/{name}", "by": user, "replaced": replaced})
         try:
-            replaced = library.write_anchor(ROOT / latest, name, body.replace)
-        except Exception:
-            log.exception("reference packshot for job %s not written", job_id)
+            replaced = library.publish_anchor(ROOT / latest, name, body.replace, record)
+        except (Exception, SystemExit):
+            log.exception("reference packshot for job %s not saved", job_id)
             _undo(conn, job, "anchor")
             return JSONResponse({"error": NOT_SAVED}, 500)
         if replaced is None:  # another request wrote this colour's reference packshot meanwhile
             _undo(conn, job, "anchor")
             return JSONResponse(exists, 409)
-        # the chain's logo placement reads this event's file (worker.anchor_source)
-        ledger.record({"event": "anchor_approved", "file": latest, "shot_id": job["spec"]["shot"]["shot_id"],
-                       "anchor": f"{library.ANCHORS_REL}/{name}", "by": user, "replaced": replaced})
-        finish.record_verdict(ROOT / latest, "approved", body.note.strip(), by=user)
         return {"item": _item(conn, job_id), "anchor": name}
 
 
@@ -600,8 +623,9 @@ def list_rules():
     return {"rules": [library.public_rule(i, r) for i, r in enumerate(rules)], "scopes": library.scope_options()}
 
 
-def _settle_rule(index: int, status: str, user: str, **fields):
-    """Move pending rule `index` to `status` ("active" or "dismissed"), recording who did it; 404 or 409 otherwise."""
+def _settle_rule(index: int, status: str, user: str, check=None, **fields):
+    """Move pending rule `index` to `status` ("active" or "dismissed"), recording who did it; 404 or 409 otherwise.
+    check(): a refusal (a response) or None, run under the lock just before the change."""
     with library.RULES_LOCK:
         doc = compiler.load_rules()
         rules = doc["rules"]
@@ -610,6 +634,9 @@ def _settle_rule(index: int, status: str, user: str, **fields):
         rule = rules[index]
         if rule.get("status") != "pending":
             return JSONResponse({"error": RULE_DONE.get(rule.get("status"), "This rule is not pending.")}, 409)
+        refused = check() if check else None
+        if refused is not None:
+            return refused
         by = "activated_by" if status == "active" else "dismissed_by"
         rule.update(status=status, **fields, **{by: user})
         compiler.save_rules(doc)
@@ -619,13 +646,20 @@ def _settle_rule(index: int, status: str, user: str, **fields):
 @app.post("/api/rules/{index}/activate")
 def activate_rule(index: int, body: RuleIn, user: str = Depends(current_user)):
     """Switch a pending rule on with the person's own words (1 to 40 words) and scope: from then on it is part of
-    every compiled prompt in that scope."""
+    every compiled prompt in that scope. Refused when the longest prompt in that scope would pass CLAUDE.md's 220
+    words."""
     text = rule_words(body.prompt_text)
     if text is None:
         return JSONResponse({"error": RULE_WORDS}, 422)
     if body.applies_to not in rule_scopes():
         return JSONResponse({"error": RULE_SCOPE}, 422)
-    return _settle_rule(index, "active", user, prompt_text=text, applies_to=body.applies_to)
+
+    def fits():  # the longest prompt in the rule's scope, with the rules already on, plus this one
+        room = WORD_RANGE[1] - longest_prompt_words(body.applies_to)
+        if len(text.split()) > room:
+            return JSONResponse({"error": RULE_TOO_LONG.format(n=max(0, room))}, 409)
+        return None
+    return _settle_rule(index, "active", user, check=fits, prompt_text=text, applies_to=body.applies_to)
 
 
 @app.post("/api/rules/{index}/dismiss")
@@ -656,13 +690,15 @@ def export_image(job_id: int, body: ExportIn):
         if job is None:
             return _no_final(job_id)
         latest = _latest(conn, job)
-    if not latest or not ledger.events(latest, "approved"):
+    if not latest or not (ROOT / latest).is_file() or not _recorded(latest):
+        return JSONResponse({"error": IMAGE_GONE}, 404)
+    with ledger.snapshot():
+        approved = library.approval(latest)
+    if approved is None:
         return JSONResponse({"error": APPROVE_FIRST}, 409)
-    if not (ROOT / latest).is_file():
-        return JSONResponse({"error": FILE_MISSING}, 409)
     try:
         finish.export(ROOT / latest, body.pdf)
-    except SystemExit:  # finish.export refuses an image with no approval record
+    except SystemExit:  # its own approval check (checked just above): never let a CLI exit reach the server
         return JSONResponse({"error": APPROVE_FIRST}, 409)
     with ledger.snapshot():
         return library.export_record(latest)

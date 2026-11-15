@@ -157,7 +157,7 @@ def compile_spec(spec: dict, layout_refs: list[str] = ()) -> Compiled:
 
     garment_text = " ".join(filter(None, [
         _sentence(f"The garment is {_a(cat['style_name'])} {cat['style_name'].lower()} in {g['gsm']} GSM {fabric}" + (f": {fit}" if fit else "")),
-        _sentence(f"The {g['gsm']} GSM fabric {weight_look}"),
+        _sentence(f"The fabric {weight_look}"),
         _sentence(f"The colour is {colour_text}"),
         _sentence(f"Construction: {_join(construction, '; ')}"),
     ]))
@@ -224,12 +224,12 @@ def compile_spec(spec: dict, layout_refs: list[str] = ()) -> Compiled:
             warn.append(f"cast {m['cast']}: no approved reference sheet yet, face consistency relies on the description")
         model_text = " ".join([
             _sentence(f"Worn by a model ({cast_desc}), {m['pose']}"),
-            "The fleece shows natural creases at the elbows and around the pocket.",
+            "Natural creases at the elbows and pocket.",
         ])
 
     # --- camera, light, style ------------------------------------------------------------
     cam = shot["camera"]
-    camera_text = _sentence(f"The camera is {cam['angle']}, with {_a(cam['lens'])} {cam['lens']} lens, {cam['framing']}")
+    camera_text = _sentence(f"Camera: {cam['angle']}, {cam['lens']} lens, {cam['framing']}")
     scopes = {"all", cat["id"], "on_model" if m.get("present") else "packshot"}
     rules = load_rules()["rules"]
     rule_text = " ".join(_sentence(r["prompt_text"]) for r in rules

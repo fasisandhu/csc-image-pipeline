@@ -219,19 +219,32 @@ def _approval_pdf(im: Image.Image, spec: dict, record: dict, out_dir: Path) -> P
 
 def record_verdict(image: Path, verdict: str, note: str, by: str = "user") -> int | None:
     """Record a person's verdict. `by` is who decided: "user" from this CLI, the studio user id from the page.
-    A rejection's note becomes a pending prompt rule; returns its index in brand/prompt_rules.json, else None."""
+    A rejection's note becomes a pending prompt rule; returns its index in brand/prompt_rules.json, else None.
+    The rejection and its rule are recorded both or neither: the rule is written first and taken back if the
+    rejection cannot be logged."""
     entry, spec = _spec_for(image)
-    ledger.record({"event": verdict, "file": rel(image), "shot_id": entry["shot_id"], "by": by, "note": note})
-    index = None
-    if verdict == "rejected" and note:
-        rules = compiler.load_rules()
-        rules["rules"].append({"status": "pending", "applies_to": "all", "note": note, "prompt_text": "",
-                               "from_shot": entry["shot_id"], "date": ledger.now().date().isoformat()})
-        compiler.save_rules(rules)
-        index = len(rules["rules"]) - 1
-        print("note saved as a pending rule in brand/prompt_rules.json; Claude turns it into prompt_text")
+    event = {"event": verdict, "file": rel(image), "shot_id": entry["shot_id"], "by": by, "note": note}
+    if not (verdict == "rejected" and note):
+        ledger.record(event)
+        print(f"{verdict}: {rel(image)}")
+        return None
+    had_rules = compiler.RULES_PATH.exists()
+    rules = compiler.load_rules()
+    before = json.loads(json.dumps(rules))
+    rules["rules"].append({"status": "pending", "applies_to": "all", "note": note, "prompt_text": "",
+                           "from_shot": entry["shot_id"], "date": ledger.now().date().isoformat()})
+    compiler.save_rules(rules)
+    try:
+        ledger.record(event)
+    except BaseException:
+        if had_rules:
+            compiler.save_rules(before)
+        else:
+            compiler.RULES_PATH.unlink(missing_ok=True)
+        raise
+    print("note saved as a pending rule in brand/prompt_rules.json; Claude turns it into prompt_text")
     print(f"{verdict}: {rel(image)}")
-    return index
+    return len(rules["rules"]) - 1
 
 
 def main() -> int:

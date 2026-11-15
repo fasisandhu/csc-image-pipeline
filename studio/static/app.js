@@ -195,7 +195,6 @@
   ];
   const KIND_WORDS = { packshot: 'Packshot', on_model: 'On model' };
   const PURPOSE_WORDS = { website: 'Website sample', client: 'Client mockup' };
-  const MODEL_NAMES = { 'gemini-3.1-flash-image': 'Nano Banana 2 (standard)', 'gemini-3-pro-image': 'Nano Banana Pro (premium)' };
   const COPY_MS = 4000;  // how long "Copied" stays on a copy button
   const LIBRARY_NOTES = {
     empty: 'No approved images yet — approve one in Review.',
@@ -2071,7 +2070,7 @@
           { k: 'For', v: PURPOSE_WORDS[it.purpose] || '' },
           { k: 'Approved by', v: [it.approved_by, dateTime(it.approved_at)].filter(Boolean).join(' · ') },
           { k: 'Cost so far', v: smallMoney(it.cost_usd) },
-          { k: 'AI model', v: MODEL_NAMES[it.ai_model] || it.ai_model || '' },
+          { k: 'AI model', v: typeof it.ai_model_label === 'string' ? it.ai_model_label : '' },  // the server's words
         ];
         return rows.filter(r => r.v);
       },

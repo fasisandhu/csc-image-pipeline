@@ -24,6 +24,7 @@ from PIL import Image
 from pipeline import compile as compiler
 from pipeline import finish, ledger, qa, repair
 from pipeline.compile import ROOT, CompileError, compile_spec, load_json, resolve_colour
+from pipeline.providers.gemini import model_label
 from pipeline.specs import colour_id, load_recipes
 
 from .tasks import rule_scopes
@@ -454,7 +455,7 @@ def library_item(job: dict, steps: list[dict]) -> dict | None:
         "id": job["id"], "shot_id": ((job.get("spec") or {}).get("shot") or {}).get("shot_id"),
         "words": shot_words(job), "caption": caption_for(job.get("answers")), "image": served(latest),
         "purpose": (job.get("answers") or {}).get("purpose"),  # "website" or "client": a client mockup gets a PDF
-        **facts, "ai_model": entry.get("model"),
+        **facts, "ai_model_label": model_label(entry.get("model"), entry.get("tier")),  # never the model id
         "reference": _is_reference(job, latest),
         "cost_usd": cost_so_far(job, steps),
         "approved_by": _public(approved.get("by")), "approved_at": approved.get("ts"),

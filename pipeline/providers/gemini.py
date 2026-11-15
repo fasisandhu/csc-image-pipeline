@@ -19,16 +19,27 @@ from .base import GenerateResult, ProviderError
 # Paid-tier prices per 1M tokens and output image tokens per size, Nov 2026.
 MODELS = {
     "standard": {
-        "id": "gemini-3.1-flash-image",
+        "id": "gemini-3.1-flash-image", "label": "Nano Banana 2 (standard)",
         "input": 0.50, "text_out": 3.00, "image_out": 60.00,
         "image_tokens": {"512": 747, "1K": 1120, "2K": 1680, "4K": 2520},
     },
     "premium": {
-        "id": "gemini-3-pro-image",
+        "id": "gemini-3-pro-image", "label": "Nano Banana Pro (premium)",
         "input": 2.00, "text_out": 12.00, "image_out": 120.00,
         "image_tokens": {"1K": 1120, "2K": 1120, "4K": 2000},
     },
 }
+
+
+def model_label(model_id: str | None, tier: str | None = None) -> str:
+    """A model's name in plain words for people ("Nano Banana 2 (standard)"), so no page carries a model id. An id
+    this table no longer has falls back to its tier name, else to the id itself ("" when neither is known)."""
+    for m in MODELS.values():
+        if m["id"] == model_id:
+            return m["label"]
+    return tier or model_id or ""
+
+
 REF_IMAGE_TOKENS = 560  # approximate input tokens per reference image
 PROMPT_TOKENS_EST = 400  # generous allowance for a 220-word prompt plus thinking overhead
 

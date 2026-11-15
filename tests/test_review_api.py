@@ -790,7 +790,9 @@ def test_library_lists_only_approved_with_record(env, client):
     assert item["words"].startswith("On model, front") and "Maya" in item["words"]
     assert (item["kind"], item["style"], item["colour"], item["model"]) == ("on_model", "pullover-oversized", "olive",
                                                                            "Maya")
-    assert item["technique"] is None and item["placement"] is None and item["ai_model"] == "gemini-3.1-flash-image"
+    assert item["technique"] is None and item["placement"] is None
+    assert item["ai_model_label"] == "Nano Banana 2 (standard)" and "ai_model" not in item  # the adapter's label only
+    assert "gemini-3.1-flash-image" not in r.text
     assert item["cost_usd"] == round(0.101 + 0.01 + 0.0 + 0.012, 4)
     assert item["approved_by"] == "owner" and item["approved_at"].startswith(ledger.now().date().isoformat())
     assert STYLE_BLOCK in item["prompt"] and item["reference"] is False and item["export"] is None

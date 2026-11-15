@@ -402,3 +402,28 @@ def test_startup_binds_first_then_marks_then_starts_worker_then_serves(startup, 
     serve = startup.pop()
     assert startup == ["bind", "dotenv", "db", "mark", "worker"]
     assert serve[0] == "serve" and serve[1][0] == "127.0.0.1" and serve[1][1] > 0
+
+
+# --- model ids stay in their adapters (final review Minor 1) ------------------------------------
+def test_model_label_comes_from_the_adapter():
+    from pipeline.providers import gemini
+
+    for tier, m in gemini.MODELS.items():
+        assert gemini.model_label(m["id"]) == m["label"] and tier in m["label"].lower()
+    assert gemini.model_label("gemini-9-image", "premium") == "premium"  # an id the table no longer has: its tier
+    assert gemini.model_label("gemini-9-image") == "gemini-9-image"
+    assert gemini.model_label(None, "standard") == "standard" and gemini.model_label(None) == ""
+
+
+def test_no_model_id_in_the_page():
+    """CLAUDE.md: no model is hard-wired outside its adapter. The page gets plain labels from the server."""
+    from pipeline.providers import cloudflare, gemini, vision
+    from studio.brain import claude
+
+    ids = [m["id"] for m in gemini.MODELS.values()] + [cloudflare.MODEL, vision.MODEL, claude.DEFAULT_MODEL]
+    files = [p for p in Path(app_mod.STATIC_DIR).rglob("*") if p.is_file()]
+    assert any(p.name == "app.js" for p in files)
+    for p in files:
+        text = p.read_text(encoding="utf-8", errors="ignore")
+        for model in ids:
+            assert model not in text, (p.name, model)

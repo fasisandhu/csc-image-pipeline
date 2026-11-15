@@ -838,6 +838,84 @@ def test_export_requires_approval_and_returns_files(env, client):
                               "caption": body["caption"]}
 
 
+# --- the logo gate: a design the model rendered is approved or exported only once its logo passed ---------------
+LOGO_REFUSED = {"error": "The logo on this image did not pass its check. Ask for a change, or reject it."}
+
+
+def logo_result(codes=(), found=True):
+    """A check whose logo verification found the centre-chest design with these codes (none: it passed)."""
+    logo = {"result": "fail" if codes or not found else "pass",
+            "decorations": [{"placement": "centre chest", "found": found, "codes": list(codes)}]}
+    return {**check(list(codes), "flag" if codes else "approve"), "logo": logo}
+
+
+def test_failed_logo_cannot_be_approved(env, client):
+    """CLAUDE.md: a logo is never published unverified. A person's note does not clear a logo that failed its check
+    (or was never checked), on either approve route."""
+    failed = env.final(DECORATED, review="needs_person", result=logo_result(["logo_text"]),
+                       reason="No approved reference packshot to place the real logo on.")
+    never = env.final(DECORATED, review="needs_person", result={**check(), "logo": None},
+                      reason="The checks stopped at the logo check because the budget is reached.")
+    lost = env.final(DECORATED, review="needs_person", result=logo_result(["logo_shape"], found=False))
+    for case in (failed, never, lost):
+        item = client.get(f"/api/reviews/{case.id}").json()
+        assert item["actions"]["approve"] is False and item["actions"]["anchor"] is False
+        assert item["actions"]["reject"] is True and item["logo_note"] == LOGO_REFUSED["error"]
+        for verb, body in (("approve", {"note": "the logo looks fine to me"}), ("approve", {}),
+                           ("anchor", {"note": "fine", "replace": True})):
+            r = post(client, case.id, verb, body)
+            assert r.status_code == 409, (verb, r.text)
+            if verb == "approve":
+                assert r.json() == LOGO_REFUSED
+        assert job(case.id)["review"] == "needs_person"
+    assert not env.events("approved")
+
+    # the person can still ask for the logo to be fixed, or reject it
+    assert post(client, failed.id, "change", {"code": "logo_text"}).status_code == 200
+    assert post(client, never.id, "reject", {"note": "logo misspelled"}).status_code == 200
+
+
+def test_failed_logo_cannot_be_exported(env, client):
+    """An approval recorded outside the studio (the CLI) does not let an unverified logo out either."""
+    j = env.final(DECORATED, review="needs_person", result=logo_result(["logo_size"]), size=(820, 1025))
+    env.record({"event": "approved", "file": j.file, "shot_id": j.sid, "by": "user", "note": "cli"})
+    for pdf in (False, True):
+        r = client.post(f"/api/library/{j.id}/export", json={"pdf": pdf})
+        assert (r.status_code, r.json()) == (409, LOGO_REFUSED)
+    assert not (ROOT / "out" / "export" / j.sid).exists() and not env.events("exported")
+
+
+def test_verified_or_composited_logo_can_be_approved(env, client):
+    ok = env.final(DECORATED, result=logo_result())  # the logo check passed: ready
+    assert client.get(f"/api/reviews/{ok.id}").json()["logo_note"] is None
+    assert post(client, ok.id, "approve").status_code == 200
+
+    # the real artwork placed on the reference packshot, then checked again and passed
+    comp = env.final(DECORATED, review="needs_person", result=logo_result(["logo_text"]))
+    placed = env.image("finals", f"{comp.sid}_logo")
+    env.record({"shot_id": comp.sid, "provider": "local", "phase": "finish", "op": "composite",
+                "status": "ok", "file": placed, "source": comp.file, "root": placed, "cost_usd": 0.0})
+    env.step(comp.id, "composite", comp.file, placed)
+    env.step(comp.id, "check", placed, placed, result=logo_result())
+    with closing(db.connect()) as conn:
+        db.set_review(conn, comp.id, "ready")
+    item = client.get(f"/api/reviews/{comp.id}").json()
+    assert item["latest"] == placed and item["actions"]["approve"] is True and item["logo_note"] is None
+    assert post(client, comp.id, "approve").status_code == 200
+    assert env.events("approved")[-1]["file"] == placed
+
+
+def test_logo_gate_leaves_undecorated_shots_alone(env, client):
+    """No design the model rendered: no logo to clear, whatever the logo check says (it never ran)."""
+    j = env.final(PLAIN, review="needs_person", result={**check(), "logo": None}, size=(820, 1025),
+                  reason="The face could not be checked against a reference photo; please look.")
+    item = client.get(f"/api/reviews/{j.id}").json()
+    assert item["actions"]["approve"] is True and item["logo_note"] is None
+    assert post(client, j.id, "approve", {"note": "garment checked by eye"}).status_code == 200
+    r = client.post(f"/api/library/{j.id}/export", json={"pdf": False})
+    assert r.status_code == 200 and len(r.json()["files"]) == 2
+
+
 def test_reject_folder_and_export_served_but_contained(env, client):
     rej_jpg, rej_png = env.image("reject"), env.image("reject", suffix=".png")
     for path, kind in ((rej_jpg, "image/jpeg"), (rej_png, "image/png")):

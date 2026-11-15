@@ -547,6 +547,8 @@
               <p class="cap" x-text="'Caption that goes with it: “' + it.caption + '”'"></p>
 
               <div class="stack">
+                <!-- no Approve while the logo has not passed its check: the server refuses it too -->
+                <p class="small why logo-note" x-show="it.logo_note" x-text="it.logo_note"></p>
                 <template x-if="it.actions && it.actions.approve">
                   <button type="button" class="btn pri" :id="'rv-approve-' + it.id" :disabled="$store.studio.review.busy !== null"
                           @click="$store.studio.approveReview(it)">Approve</button>

@@ -420,6 +420,14 @@ def _recorded(latest: str | None) -> bool:
     return True
 
 
+def _logo_refused(conn, job: dict, latest: str | None) -> JSONResponse | None:
+    """The 409 when the latest image's logo has not cleared its check (library.logo_cleared), else None."""
+    with ledger.snapshot():
+        if library.logo_cleared(job["spec"], db.steps_for(conn, job["id"]), latest):
+            return None
+    return JSONResponse({"error": library.LOGO_NOT_CLEARED}, 409)
+
+
 def _undo(conn, job: dict, state: str) -> None:
     """Put back the review a verdict claimed, when what the verdict writes could not be written."""
     db.set_review(conn, job["id"], job["review"], only_from=(state,), reason=job["review_reason"])
@@ -440,15 +448,18 @@ def get_review(job_id: int):
 
 @app.post("/api/reviews/{job_id}/approve")
 def approve(job_id: int, body: NoteIn, user: str = Depends(current_user)):
-    """From "ready", or from "needs_person" with a note saying why. One verdict per job: a conditional update."""
+    """From "ready", or from "needs_person" with a note saying why. One verdict per job: a conditional update.
+    Never an image whose logo has not cleared its check: no note overrides that (CLAUDE.md non-negotiable)."""
     note = body.note.strip()
     with closing(db.connect()) as conn:
         job = _final(conn, job_id)
         if job is None:
             return _no_final(job_id)
+        latest = _latest(conn, job)
+        if job["review"] in library.ACTIONABLE and (refused := _logo_refused(conn, job, latest)):
+            return refused
         if job["review"] == "needs_person" and not note:
             return JSONResponse({"error": NOTE_NEEDED}, 422)
-        latest = _latest(conn, job)
         if job["review"] in library.ACTIONABLE and not _recorded(latest):
             return JSONResponse({"error": NO_RECORD}, 409)
         if not db.set_review(conn, job_id, "approved", only_from=library.ACTIONABLE if note else ("ready",)):
@@ -583,6 +594,8 @@ def approve_anchor(job_id: int, body: AnchorIn, user: str = Depends(current_user
             refusal = library.anchor_refusal(job, latest, ledger.find(latest) if latest else None)
         if refusal:
             return JSONResponse({"error": refusal}, 409)
+        if refused := _logo_refused(conn, job, latest):  # never decorated today (NOT_PLAIN): kept as a second lock
+            return refused
         if job["review"] == "needs_person" and not note:
             return JSONResponse({"error": NOTE_NEEDED}, 422)
         if job["review"] not in library.ACTIONABLE:
@@ -684,18 +697,23 @@ def get_library(style: str | None = None, colour: str | None = None, technique: 
 
 @app.post("/api/library/{job_id}/export")
 def export_image(job_id: int, body: ExportIn):
-    """Web sizes (WebP 1600/800/400, up to the image's width), alt text and caption; with pdf, the approval sheet."""
+    """Web sizes (WebP 1600/800/400, up to the image's width), alt text and caption; with pdf, the approval sheet.
+    Only an approved image whose logo cleared its check (library.logo_cleared), however it was approved."""
     with closing(db.connect()) as conn:
         job = _final(conn, job_id)
         if job is None:
             return _no_final(job_id)
-        latest = _latest(conn, job)
+        steps = db.steps_for(conn, job_id)
+    latest = library.latest_image(job, steps)
     if not latest or not (ROOT / latest).is_file() or not _recorded(latest):
         return JSONResponse({"error": IMAGE_GONE}, 404)
     with ledger.snapshot():
         approved = library.approval(latest)
+        cleared = library.logo_cleared(job["spec"], steps, latest)
     if approved is None:
         return JSONResponse({"error": APPROVE_FIRST}, 409)
+    if not cleared:
+        return JSONResponse({"error": library.LOGO_NOT_CLEARED}, 409)
     try:
         finish.export(ROOT / latest, body.pdf)
     except SystemExit:  # its own approval check (checked just above): never let a CLI exit reach the server

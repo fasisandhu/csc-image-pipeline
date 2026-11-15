@@ -56,6 +56,7 @@ FROM_SKETCH = ("This image was built on a sketch, so it cannot become a referenc
 FROM_COMPOSITE = "A logo placement cannot become a reference packshot."
 NO_RECORD = "This image has no generation record, so it cannot become a reference packshot."
 SET_ASIDE = "This image was set aside by the checks, so it cannot become a reference packshot."
+LOGO_NOT_CLEARED = "The logo on this image did not pass its check. Ask for a change, or reject it."
 
 
 def _public(text):
@@ -217,6 +218,33 @@ def current_anchor_source(spec: dict) -> str | None:
     return events[-1].get("file") if events else None
 
 
+# --- the logo gate -------------------------------------------------------------------------------
+def latest_check(steps: list[dict], latest: str | None) -> dict | None:
+    """The newest finished check of the latest image (its input, or the render it moved to out/reject)."""
+    done = [s for s in steps if s["kind"] == "check" and s["status"] == "done" and s.get("result")]
+    return next((s for s in reversed(done) if latest and latest in (s["input"], s["output"])), None)
+
+
+def logo_cleared(spec: dict, steps: list[dict], latest: str | None) -> bool:
+    """Whether the latest image's logo may be approved or exported (CLAUDE.md: every logo either passes verification
+    or is composited from the real vector file). True when the shot has no design the model rendered
+    (generate_and_verify), when the latest image is a studio composite of the real artwork, or when the latest
+    image's newest finished check verified every rendered design: found, with no reason codes. A logo check that
+    never ran (a budget stop, an older image) does not clear it. Call inside ledger.snapshot()."""
+    rendered = [d for d in (spec.get("shot") or {}).get("decoration") or []
+                if d.get("render_mode") == "generate_and_verify"]
+    if not rendered:
+        return True
+    if not latest:
+        return False
+    entry = ledger.find(latest)
+    if entry is not None and _composite_made(entry):
+        return True
+    check = latest_check(steps, latest)
+    decos = (((check or {}).get("result") or {}).get("logo") or {}).get("decorations") or []
+    return len(decos) == len(rendered) and all(d.get("found") and not d.get("codes") for d in decos)
+
+
 # --- checks in plain words -----------------------------------------------------------------------
 def _colour_words(colour: dict | None, tolerance: float) -> dict | None:
     if colour is None:
@@ -254,7 +282,7 @@ def checks_summary(steps: list[dict], latest: str | None) -> dict | None:
     """The latest image's check in plain words, or None while it has none: the colour, stray text, logo and each
     AI-review line, plus the faults earlier checks in this chain found that this one no longer finds ("fixed")."""
     done = [s for s in steps if s["kind"] == "check" and s["status"] == "done" and s.get("result")]
-    last = next((s for s in reversed(done) if latest in (s["input"], s["output"])), None)
+    last = latest_check(steps, latest)
     if last is None:
         return None
     r = last["result"]
@@ -318,6 +346,7 @@ def review_item(job: dict, steps: list[dict]) -> dict:
     refusal = anchor_refusal(job, latest, entry)
     open_ = review in ACTIONABLE
     codes = change_codes(spec)
+    logo_ok = logo_cleared(spec, steps, latest)
     return {
         "id": job["id"], "user": job["user"], "created": job["created"], "updated": job["updated"],
         "answers": job.get("answers") or {}, "shot_id": shot_id, "words": shot_words(job),
@@ -325,14 +354,16 @@ def review_item(job: dict, steps: list[dict]) -> dict:
         "review": review, "reason": _public(job.get("review_reason")),
         # why a plain front packshot open to a verdict has no "Approve as reference packshot" (None for other shots)
         "anchor_note": refusal if open_ and refusal not in (None, NOT_PLAIN) else None,
+        # why an image open to a verdict has no "Approve": its logo did not pass (or never had) its check
+        "logo_note": LOGO_NOT_CLEARED if open_ and not logo_ok else None,
         "latest": served(latest), "images": [served(i) for i in chain_images(job, steps)],
         "steps": [_step(s) for s in steps],
         "checks": checks_summary(steps, latest),
         "limits_left": limits,
         "cost_usd": cost_so_far(job, steps),
         "actions": {
-            "approve": open_, "note_required": review == "needs_person", "reject": open_,
-            "anchor": open_ and refusal is None,
+            "approve": open_ and logo_ok, "note_required": review == "needs_person", "reject": open_,
+            "anchor": open_ and refusal is None and logo_ok,
             "anchor_exists": refusal is None and anchor_exists(spec),
             "change": open_ and not running and entry is not None and limits["repairs"] > 0 and bool(codes),
             "check": (review in (None, "needs_person") and not running and bool(served(latest))

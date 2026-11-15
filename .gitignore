@@ -24,3 +24,6 @@ venv/
 
 # Brainstorming companion mockups
 .superpowers/
+
+# Browser-tool logs and snapshots (Playwright MCP)
+.playwright-mcp/

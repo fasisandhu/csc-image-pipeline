@@ -76,3 +76,24 @@ def test_export_requires_approval(fake_log, tmp_path):
     from pipeline.finish import export
     with pytest.raises(SystemExit, match="no approval"):
         export(tmp_path / "x.jpg")
+
+
+def test_as_shot_spec_reads_a_dashboard_spec_from_out_specs():
+    """`python -m pipeline.logo composite --as-shot <id>` finds a dashboard final's spec in out/specs/ as well as
+    specs/ (qa.spec_path), not only hand-written specs (final review minor)."""
+    import json
+    import uuid
+
+    from pipeline import logo, qa
+    sid = f"zz-test-as-shot-{uuid.uuid4().hex[:8]}"
+    target = qa.ROOT / "out" / "specs" / f"{sid}.json"
+    assert not (qa.ROOT / "specs" / f"{sid}.json").exists()
+    spec = {"set": {"set_id": sid}, "shot": {"shot_id": sid, "garment": {"catalogue": "zip"}}}
+    try:
+        target.parent.mkdir(parents=True, exist_ok=True)
+        target.write_text(json.dumps(spec), encoding="utf-8")
+        assert logo.as_shot_spec(sid) == spec
+    finally:
+        target.unlink(missing_ok=True)
+    with pytest.raises(FileNotFoundError):
+        logo.as_shot_spec(sid)

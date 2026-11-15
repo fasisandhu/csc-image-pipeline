@@ -127,3 +127,14 @@ def test_tour_flag_is_kept_in_storage_inside_try():
     assert store.count("try {") == 2 and store.count("catch (e)") == 2  # every localStorage call is in try/catch
     calls = r"localStorage\s*\."
     assert len(re.findall(calls, js)) == len(re.findall(calls, store)) == 2  # and nothing else touches it
+
+
+def test_reference_packshot_approval_is_not_a_dead_end():
+    """Until the Review screen exists, the page and the guide send people to the owner for the approval, not to a
+    tab that says "coming in a later step" (final review minor)."""
+    js = static_text("app.js")
+    assert ("anchorDone: 'This reference packshot needs approving before your shot can use it. For now, ask the "
+            "owner to approve it; the Review tab arrives in the next step.'") in js
+    assert "Approve this reference packshot in the Review tab" not in js
+    step5 = guide.render("make-a-website-image").split("## 5.")[1].split("## 6.")[0]
+    assert "ask the owner to approve it" in step5 and "Review tab arrives in the next step" in step5

@@ -300,6 +300,13 @@ def composite(image: Path, artwork: str, placement: str, size_cm: float, preset:
     return np.clip(out, 0, 255), info
 
 
+def as_shot_spec(shot_id: str) -> dict:
+    """The spec `--as-shot` logs a composite under: specs/ or out/specs/ (a dashboard final), as qa finds it."""
+    from .qa import spec_path
+
+    return json.loads(spec_path(shot_id).read_text(encoding="utf-8"))
+
+
 def main() -> int:
     from dotenv import load_dotenv
 
@@ -334,7 +341,7 @@ def main() -> int:
     entry, spec = _spec_for(image)
     if args.as_shot:
         entry = {**entry, "shot_id": args.as_shot, "root": entry.get("root") or entry.get("file")}
-        spec = json.loads((ROOT / "specs" / f"{args.as_shot}.json").read_text(encoding="utf-8"))
+        spec = as_shot_spec(args.as_shot)
     cat = load_json(Path("catalogue") / f"{spec['shot']['garment']['catalogue']}.json")
     limit = cat["decoration_placements"].get(placement, {}).get("max_cm")
     if not is_missing(limit) and size_cm > limit:

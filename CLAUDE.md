@@ -93,13 +93,15 @@ csc-image-pipeline/
 │   ├── questions/        # question sets as data (images.json)
 │   ├── questions.py      # answers -> sections, options, limits, missing
 │   ├── brain/            # Claude per user, Gemini fallback (one JSON call per task)
+│   │   └── warm.py       # warm Claude session per user for quick tasks (read_brief)
 │   ├── tasks.py          # brain tasks (read_brief)
-│   ├── app.py            # FastAPI JSON API: questions, brief, preview, jobs
+│   ├── app.py            # FastAPI: serves the page and its JSON API (questions, brief, preview, jobs, files)
 │   ├── db.py             # SQLite job store (out/studio.db)
 │   ├── worker.py         # runs queued jobs through the pipeline, one at a time, no retries
 │   ├── identity.py       # who is asking (localhost = owner)
 │   ├── guide.py          # teammate guide pages, numbers filled from the live rule files
 │   ├── guide/            # guide pages as Markdown with {{placeholders}}
+│   ├── static/           # the builder page (index.html, app.js); vendored Alpine and marked, VERSIONS.txt
 │   └── __main__.py       # python -m studio: bind 127.0.0.1, mark interrupted jobs, start worker, serve
 ├── spikes/               # throwaway experiments with findings (e.g. claude_sdk/)
 ├── docs/superpowers/     # design specs and implementation plans
@@ -109,6 +111,7 @@ csc-image-pipeline/
     ├── drafts/
     ├── finals/
     ├── reject/
+    ├── specs/            # dashboard specs (written by the studio worker), read by the qa/repair/finish/logo CLIs
     └── log.jsonl
 ```
 

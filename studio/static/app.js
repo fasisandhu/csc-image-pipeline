@@ -95,7 +95,7 @@
     noError: 'It stopped without saying why.',
     interrupted: 'Stopped when the studio restarted; nothing was retried.',
     review: 'Checks and approval come in the Review tab (next step).',
-    anchorDone: 'Approve this reference packshot in the Review tab (next step); then come back and create your shot.',
+    anchorDone: 'This reference packshot needs approving before your shot can use it. For now, ask the owner to approve it; the Review tab arrives in the next step.',
     unreachable: "Couldn't reach the studio; check it is running, then try again.",
     refused: "The studio couldn't start this. Try again in a moment.",
     list: "Couldn't load your recent images; check the studio is running.",

@@ -100,14 +100,20 @@ def _outcome(result: ResultMessage | None) -> tuple[dict | None, str, float]:
 class ClaudeBrain:
     name = "claude"
 
-    def __init__(self, user: str, credential: str, token_env: str | None, model: str = DEFAULT_MODEL):
+    def __init__(self, user: str, credential: str, token_env: str | None, model: str = DEFAULT_MODEL,
+                 timeout_s: float | None = None):
         if credential not in CREDENTIALS:
             raise ValueError(f"ClaudeBrain credential must be one of {CREDENTIALS}")
         self.prefix = env_prefix(user)
         self.user, self.credential, self.token_env, self.model = user, credential, token_env, model
+        self.timeout_s = timeout_s  # None: TIMEOUT_S
 
     def __repr__(self) -> str:
         return f"ClaudeBrain(user={self.user!r}, credential={self.credential!r}, model={self.model!r})"
+
+    def timeout(self) -> float:
+        """Seconds one call may take: this brain's timeout_s, else the module's TIMEOUT_S."""
+        return TIMEOUT_S if self.timeout_s is None else self.timeout_s
 
     def cap_usd(self) -> float:
         return float(os.environ.get(self.prefix + "CLAUDE_CAP_USD") or DEFAULT_CAP_USD)
@@ -167,7 +173,7 @@ class ClaudeBrain:
         """The only SDK call: (structured_output, result text, total_cost_usd).
 
         Synchronous: it starts its own event loop with asyncio.run, so it must not be called from inside a
-        running event loop (call ask_json from plain `def` code). Raises TimeoutError after TIMEOUT_S.
+        running event loop (call ask_json from plain `def` code). Raises TimeoutError after timeout().
         """
         prompt, options = self._options(_TASK.get(), prompt, env, images, schema)
 
@@ -182,7 +188,7 @@ class ClaudeBrain:
                 raise _failure(e, _cost(result)) from None
             return result
 
-        return _outcome(asyncio.run(asyncio.wait_for(ask(), TIMEOUT_S)))
+        return _outcome(asyncio.run(asyncio.wait_for(ask(), self.timeout())))
 
     def _costs(self, total: float) -> tuple[float, dict]:
         """(billed cost_usd, extra record fields). Subscription use is not billed; keep its usage equivalent."""
@@ -239,7 +245,7 @@ class ClaudeBrain:
                 raise BrainError("claude: answer had no JSON object")
         except Exception as e:  # noqa: BLE001 - any failure is logged and becomes a BrainError
             if isinstance(e, TimeoutError):
-                msg = f"claude: no answer within {TIMEOUT_S} s"
+                msg = f"claude: no answer within {self.timeout()} s"
             elif isinstance(e, BrainError):
                 msg = str(e)
                 total = max(total, e.cost_usd)  # a failed run can still be billed

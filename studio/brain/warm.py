@@ -39,8 +39,11 @@ from .base import BrainError, BrainResult
 from .claude import DEFAULT_MODEL, ClaudeBrain
 
 IDLE_S = 600
+# Quick tasks (get_brain(fast=True)): the page gives up on "Fill from my words" after 30 s, so a hung Claude must
+# fail by 20 s, leaving the Gemini fallback time to answer inside it. Other tasks keep claude.TIMEOUT_S.
+FAST_TIMEOUT_S = 20
 CLEAR_TIMEOUT_S = 15
-WAIT_GRACE_S = 5  # a calling thread waits claude.TIMEOUT_S plus this for the loop to answer
+WAIT_GRACE_S = 5  # a calling thread waits the call's timeout plus this for the loop to answer
 SHUTDOWN_WAIT_S = 10  # per round, for calls and clean-ups to finish once their clients are closed
 LOW_EFFORT_TASKS = frozenset({"read_brief"})
 
@@ -84,9 +87,10 @@ class _Pool:
         self._sessions: dict[tuple, _Session] = {}  # loop thread only
         self._tasks: set[asyncio.Task] = set()  # loop thread only: background clean-ups in flight
 
-    def ask(self, key: tuple, prompt: str, options: ClaudeAgentOptions,
-            idle_s: float) -> tuple[dict | None, str, float]:
-        """(structured_output, result text, cost) from the client for `key`. Blocks the calling thread."""
+    def ask(self, key: tuple, prompt: str, options: ClaudeAgentOptions, idle_s: float,
+            timeout_s: float) -> tuple[dict | None, str, float]:
+        """(structured_output, result text, cost) from the client for `key`. Blocks the calling thread: the loop
+        gives up after `timeout_s`, and the thread itself (a stuck loop) after `timeout_s` plus WAIT_GRACE_S."""
         with self._guard:
             if self._closing:
                 raise BrainError("claude: the studio is shutting down")
@@ -94,23 +98,23 @@ class _Pool:
                 self._loop = asyncio.new_event_loop()
                 self._thread = threading.Thread(target=self._loop.run_forever, name="warm-claude", daemon=True)
                 self._thread.start()
-            call = asyncio.run_coroutine_threadsafe(self._serve(key, prompt, options, idle_s), self._loop)
+            call = asyncio.run_coroutine_threadsafe(self._serve(key, prompt, options, idle_s, timeout_s), self._loop)
         try:
-            return call.result(timeout=claude.TIMEOUT_S + WAIT_GRACE_S)
+            return call.result(timeout=timeout_s + WAIT_GRACE_S)
         except concurrent.futures.CancelledError:
             raise BrainError("claude: the warm session closed before answering") from None
         finally:
             call.cancel()  # no-op once answered; otherwise the loop stops this call and closes its client
 
-    async def _serve(self, key: tuple, prompt: str, options: ClaudeAgentOptions,
-                     idle_s: float) -> tuple[dict | None, str, float]:
+    async def _serve(self, key: tuple, prompt: str, options: ClaudeAgentOptions, idle_s: float,
+                     timeout_s: float) -> tuple[dict | None, str, float]:
         """On the loop: wait for the client, ask, answer. The lock passes to `_finish`, which releases it."""
         s = self._sessions.get(key)
         if s is None:
             s = self._sessions[key] = _Session()
         held = False
         try:
-            async with asyncio.timeout(claude.TIMEOUT_S):  # the wait for the client counts too
+            async with asyncio.timeout(timeout_s):  # the wait for the client counts too
                 await s.lock.acquire()  # a timeout while waiting leaves the client to its current user
                 held = True
                 s.uses += 1
@@ -242,13 +246,13 @@ class WarmClaude(ClaudeBrain):
     """ClaudeBrain whose text-only calls go to a warm session (see the module docstring)."""
 
     def __init__(self, user: str, credential: str, token_env: str | None, model: str = DEFAULT_MODEL,
-                 idle_s: float = IDLE_S):
-        super().__init__(user, credential, token_env, model)
+                 idle_s: float = IDLE_S, timeout_s: float | None = None):
+        super().__init__(user, credential, token_env, model, timeout_s)
         self.idle_s = idle_s
 
     def __repr__(self) -> str:
         return (f"WarmClaude(user={self.user!r}, credential={self.credential!r}, model={self.model!r}, "
-                f"idle_s={self.idle_s!r})")
+                f"idle_s={self.idle_s!r}, timeout_s={self.timeout_s!r})")
 
     def ask_json(self, task: str, prompt: str, schema: dict, images: Sequence[Path] = (),
                  user: str = "owner", *, fallback: bool = False) -> BrainResult:
@@ -271,4 +275,4 @@ class WarmClaude(ClaudeBrain):
         options = dataclasses.replace(options, verbatim_prompts=False)
         digest = hashlib.sha256(json.dumps(schema, sort_keys=True).encode()).hexdigest()
         # the task is in the key as well: the client's system prompt names it
-        return _pool.ask((self.user, task, self.model, digest), prompt, options, self.idle_s)
+        return _pool.ask((self.user, task, self.model, digest), prompt, options, self.idle_s, self.timeout())

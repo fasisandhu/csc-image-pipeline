@@ -395,6 +395,48 @@ def test_fast_brain_is_warm_when_claude_mode(rows, monkeypatch):
     assert isinstance(brain.get_brain("owner", fast=True), GeminiBrain)
 
 
+# --- final review I3: a slow Claude reaches the Gemini fallback inside the page's 30 s ----------------
+def test_fast_tasks_use_the_short_timeout(rows, monkeypatch):
+    monkeypatch.setenv("STUDIO_OWNER_CLAUDE", "subscription")
+    assert warm.FAST_TIMEOUT_S == 20 and claude_mod.TIMEOUT_S == 60
+    fast, slow = brain.get_brain("owner", fast=True), brain.get_brain("owner")
+    assert fast.primary.timeout() == 20  # the page gives up at 30 s: Claude's 20 s leaves room for Gemini
+    assert slow.primary.timeout() == 60  # other tasks keep the long timeout
+    assert WarmClaude("owner", "subscription", OWNER_TOKEN).timeout() == 60  # the class default is unchanged
+
+
+def test_hung_fast_claude_falls_back_to_gemini_within_the_short_timeout(rows, fake, monkeypatch):
+    monkeypatch.setenv("STUDIO_OWNER_CLAUDE", "subscription")
+    monkeypatch.setattr(warm, "FAST_TIMEOUT_S", 0.3)  # stands in for 20 s; claude.TIMEOUT_S stays 60
+    monkeypatch.setattr(brain, "GeminiBrain", lambda: GeminiBrain(client=fake_client()))
+    fake.steps = ["hang"]
+    b = brain.get_brain("owner", fast=True)
+
+    t0 = time.monotonic()
+    res = b.ask_json("read_brief", "olive hoodie", SCHEMA)
+
+    assert res.provider == "gemini" and res.fallback is True
+    assert time.monotonic() - t0 < 2
+    recs = brain_rows(rows)
+    assert [(r["provider"], r["status"]) for r in recs] == [("claude", "error"), ("gemini", "ok")]
+    assert "no answer within 0.3 s" in recs[0]["error"]
+    until(lambda: fake.made[0].disconnects == 1)  # the hung client is closed, never retried
+
+
+def test_thread_backstop_follows_the_short_timeout(rows, fake, monkeypatch):
+    """The calling thread's own wait (for a loop that never answers) is the call's timeout plus a small grace,
+    not claude.TIMEOUT_S plus it."""
+    monkeypatch.setattr(warm, "WAIT_GRACE_S", 0.1)
+    b = WarmClaude("owner", "subscription", OWNER_TOKEN, timeout_s=0.2)
+    b.ask_json("read_brief", "warm up", SCHEMA)  # starts the loop thread
+    warm._pool._loop.call_soon_threadsafe(time.sleep, 1.0)  # the loop itself is stuck for 1 s
+
+    t0 = time.monotonic()
+    with pytest.raises(BrainError, match="no answer within 0.2 s"):
+        b.ask_json("read_brief", "x", SCHEMA)
+    assert time.monotonic() - t0 < 0.8
+
+
 def test_main_shuts_warm_sessions_down_after_serve(monkeypatch):
     from studio import __main__ as main_mod
     from studio import db

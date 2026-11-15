@@ -3,8 +3,9 @@
     brain = get_brain("owner", fast=True)
     result = brain.ask_json("read_brief", prompt, schema, user="owner")   # -> BrainResult
 
-Quick tasks (fast=True) go to a warm Claude session per user (warm.WarmClaude); other tasks open one
-Claude query per call (ClaudeBrain).
+Quick tasks (fast=True) go to a warm Claude session per user (warm.WarmClaude) with a 20 s timeout
+(warm.FAST_TIMEOUT_S), so the Gemini fallback still answers inside the page's 30 s; other tasks open one
+Claude query per call (ClaudeBrain) with claude.TIMEOUT_S.
 
 Env (names in .env.example): STUDIO_<USER>_CLAUDE = subscription | api_key | none (unset = none),
 STUDIO_<USER>_CLAUDE_OAUTH_TOKEN (blank = the owner's logged-in Claude Code session),
@@ -18,6 +19,7 @@ from typing import Sequence
 
 from .base import Brain, BrainError, BrainResult, env_prefix
 from .claude import ClaudeBrain
+from . import warm
 from .gemini import GeminiBrain
 from .warm import WarmClaude
 
@@ -67,5 +69,5 @@ def get_brain(user: str, fast: bool = False) -> Brain:
     if kind == "none" or (fast and fast_mode == "gemini"):
         return GeminiBrain()
     if fast and fast_mode == "claude":
-        return FallbackBrain(WarmClaude(user, kind, token_env), GeminiBrain())
+        return FallbackBrain(WarmClaude(user, kind, token_env, timeout_s=warm.FAST_TIMEOUT_S), GeminiBrain())
     return FallbackBrain(ClaudeBrain(user, kind, token_env), GeminiBrain())

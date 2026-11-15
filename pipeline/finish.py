@@ -18,6 +18,7 @@ import cv2
 import numpy as np
 from PIL import Image, ImageDraw, ImageFont
 
+from . import compile as compiler
 from . import ledger
 from .colour import hex_to_rgb, lab_to_srgb, srgb_to_lab
 from .compile import load_json, resolve_colour
@@ -216,18 +217,21 @@ def _approval_pdf(im: Image.Image, spec: dict, record: dict, out_dir: Path) -> P
     return path
 
 
-def record_verdict(image: Path, verdict: str, note: str, by: str = "user") -> None:
-    """Record a person's verdict. `by` is who decided: "user" from this CLI, the studio user id from the page."""
+def record_verdict(image: Path, verdict: str, note: str, by: str = "user") -> int | None:
+    """Record a person's verdict. `by` is who decided: "user" from this CLI, the studio user id from the page.
+    A rejection's note becomes a pending prompt rule; returns its index in brand/prompt_rules.json, else None."""
     entry, spec = _spec_for(image)
     ledger.record({"event": verdict, "file": rel(image), "shot_id": entry["shot_id"], "by": by, "note": note})
+    index = None
     if verdict == "rejected" and note:
-        rules_path = ROOT / "brand" / "prompt_rules.json"
-        rules = json.loads(rules_path.read_text(encoding="utf-8")) if rules_path.exists() else {"rules": []}
+        rules = compiler.load_rules()
         rules["rules"].append({"status": "pending", "applies_to": "all", "note": note, "prompt_text": "",
                                "from_shot": entry["shot_id"], "date": ledger.now().date().isoformat()})
-        rules_path.write_text(json.dumps(rules, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
+        compiler.save_rules(rules)
+        index = len(rules["rules"]) - 1
         print("note saved as a pending rule in brand/prompt_rules.json; Claude turns it into prompt_text")
     print(f"{verdict}: {rel(image)}")
+    return index
 
 
 def main() -> int:

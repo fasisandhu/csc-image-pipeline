@@ -118,6 +118,19 @@ def list_jobs(conn, user: str, limit: int = 20) -> list[dict]:
     return [_row(r) for r in rows]
 
 
+def done_finals(conn, user: str | None = None, limit: int | None = None) -> list[dict]:
+    """Finished final jobs, newest first: one user's (the Review tab), or everyone's (the shared library)."""
+    sql, args = "SELECT * FROM jobs WHERE kind = 'final' AND status = 'done'", []
+    if user is not None:
+        sql += " AND user = ?"
+        args.append(user)
+    sql += " ORDER BY id DESC"
+    if limit is not None:
+        sql += " LIMIT ?"
+        args.append(limit)
+    return [_row(r) for r in conn.execute(sql, args)]
+
+
 def sketch_files(conn, user: str, shot_id: str) -> list[str]:
     """Files of this user's finished drafts jobs for this shot: the sketches a final may use as its layout."""
     rows = conn.execute("SELECT * FROM jobs WHERE user = ? AND kind = 'drafts' AND status = 'done'", (user,))
@@ -200,6 +213,39 @@ def add_step(conn, job_id: int, kind: str, input: str, code: str | None = None) 
         cur = conn.execute("INSERT INTO review_steps (job_id, kind, status, input, code, created, updated)"
                            " VALUES (?, ?, 'queued', ?, ?, ?, ?)", (job_id, kind, input, code, t, t))
     return cur.lastrowid
+
+
+def queue_step(conn, job_id: int, kind: str, input: str, code: str | None, review_from: tuple,
+               review: str) -> int | None:
+    """Queue a step a person asked for (a change, the checks again) and set the review to `review`, only while the
+    review is one of `review_from` (None standing for "not started yet") and none of the job's steps is queued or
+    running. One transaction whose first statement takes the write lock before it reads, so of two clicks at once
+    exactly one queues. Returns the step id, or None when nothing was queued."""
+    if kind not in STEP_KINDS:
+        raise ValueError(f"unknown review step kind {kind!r}")
+    if review not in REVIEW_STATES:
+        raise ValueError(f"unknown review state {review!r}")
+    named = [s for s in review_from if s is not None]
+    tests = [f"review IN ({', '.join('?' * len(named))})"] if named else []
+    tests += ["review IS NULL"] if None in review_from else []
+    t = _now()
+    with conn:
+        cur = conn.execute(
+            "INSERT INTO review_steps (job_id, kind, status, input, code, created, updated)"
+            " SELECT ?, ?, 'queued', ?, ?, ?, ?"
+            " WHERE NOT EXISTS (SELECT 1 FROM review_steps WHERE job_id = ? AND status IN ('queued', 'running'))"
+            f" AND EXISTS (SELECT 1 FROM jobs WHERE id = ? AND ({' OR '.join(tests) or '0'}))",
+            (job_id, kind, input, code, t, t, job_id, job_id, *named))
+        if cur.rowcount != 1:
+            return None
+        conn.execute("UPDATE jobs SET review = ?, review_reason = NULL, updated = ? WHERE id = ?", (review, t, job_id))
+    return cur.lastrowid
+
+
+def busy(conn, job_id: int) -> bool:
+    """Whether a step of this job is queued or running."""
+    return conn.execute("SELECT 1 FROM review_steps WHERE job_id = ? AND status IN ('queued', 'running') LIMIT 1",
+                        (job_id,)).fetchone() is not None
 
 
 def next_step(conn) -> dict | None:

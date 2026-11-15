@@ -8,8 +8,10 @@ are left out of the prompt and reported as warnings, never invented.
 from __future__ import annotations
 
 import json
+import os
 import re
 import sys
+import threading
 from dataclasses import asdict, dataclass, field
 from pathlib import Path
 
@@ -17,6 +19,9 @@ from .designs import design_for, ref_png
 
 ROOT = Path(__file__).resolve().parent.parent
 WORD_RANGE = (120, 220)
+# Rejection notes become rules here (finish.record_verdict); a person switches each on. Only status "active" rules
+# whose applies_to matches the shot ("all", "packshot" or "on_model", or the catalogue id) reach a prompt.
+RULES_PATH = ROOT / "brand" / "prompt_rules.json"
 
 REF_ROLES = {
     "anchor": "the exact garment; match colour, rib width and hood shape",
@@ -52,6 +57,23 @@ def is_missing(value) -> bool:
 
 def load_json(rel: str | Path) -> dict:
     return json.loads((ROOT / rel).read_text(encoding="utf-8"))
+
+
+def load_rules() -> dict:
+    """brand/prompt_rules.json ({"rules": [...]}); no file yet means no rules."""
+    if not RULES_PATH.exists():
+        return {"rules": []}
+    return json.loads(RULES_PATH.read_text(encoding="utf-8"))
+
+
+def save_rules(doc: dict) -> None:
+    """Write brand/prompt_rules.json whole: a temporary file next to it, then a replace, so no reader sees half."""
+    tmp = RULES_PATH.with_name(f"{RULES_PATH.name}.{os.getpid()}.{threading.get_ident()}.tmp")
+    try:
+        tmp.write_text(json.dumps(doc, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
+        os.replace(tmp, RULES_PATH)
+    finally:
+        tmp.unlink(missing_ok=True)
 
 
 def _sentence(text: str) -> str:
@@ -208,9 +230,8 @@ def compile_spec(spec: dict, layout_refs: list[str] = ()) -> Compiled:
     # --- camera, light, style ------------------------------------------------------------
     cam = shot["camera"]
     camera_text = _sentence(f"The camera is {cam['angle']}, with {_a(cam['lens'])} {cam['lens']} lens, {cam['framing']}")
-    rules_path = ROOT / "brand" / "prompt_rules.json"
     scopes = {"all", cat["id"], "on_model" if m.get("present") else "packshot"}
-    rules = json.loads(rules_path.read_text(encoding="utf-8"))["rules"] if rules_path.exists() else []
+    rules = load_rules()["rules"]
     rule_text = " ".join(_sentence(r["prompt_text"]) for r in rules
                          if r.get("status") == "active" and r.get("applies_to") in scopes and r.get("prompt_text"))
     style_block = s.get("style_block") or brand["style_block"]

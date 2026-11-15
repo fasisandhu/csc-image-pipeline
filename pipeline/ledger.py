@@ -19,6 +19,8 @@ _LOCK = threading.Lock()  # the studio worker and request threads append at the 
 # Tags merged into every entry recorded in this context, e.g. the studio review step a call belongs to.
 # A context is per thread: a new thread starts without tags, so another thread's calls never carry them.
 _TAGS: contextvars.ContextVar[dict] = contextvars.ContextVar("ledger_tags", default={})
+# One read of the log shared by every entries() call in a block of lookups (see `snapshot`); per thread, like _TAGS.
+_SNAPSHOT: contextvars.ContextVar[list | None] = contextvars.ContextVar("ledger_snapshot", default=None)
 
 
 class BudgetError(RuntimeError):
@@ -34,10 +36,24 @@ def now() -> datetime:
 
 
 def entries() -> list[dict]:
+    snap = _SNAPSHOT.get()
+    if snap is not None:
+        return snap
     if not LOG.exists():
         return []
     with LOG.open(encoding="utf-8") as f:
         return [json.loads(line) for line in f if line.strip()]
+
+
+@contextmanager
+def snapshot():
+    """Read the log once for a block of lookups (find, events, the limit counts): every entries() call in this
+    context sees that one read. Only for blocks that record nothing: an entry recorded inside is not seen."""
+    token = _SNAPSHOT.set(entries())
+    try:
+        yield
+    finally:
+        _SNAPSHOT.reset(token)
 
 
 def tags() -> dict:

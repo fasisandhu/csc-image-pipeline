@@ -13,12 +13,14 @@ from contextlib import closing
 from dataclasses import asdict
 from pathlib import Path, PurePosixPath
 from typing import Literal
+from urllib.parse import urlsplit
 
 from fastapi import Depends, FastAPI, Request
 from fastapi.middleware.trustedhost import TrustedHostMiddleware
 from fastapi.responses import FileResponse, JSONResponse, PlainTextResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field, StrictBool
+from starlette.datastructures import Headers
 
 from pipeline import compile as compiler
 from pipeline import finish, ledger, qa
@@ -71,11 +73,42 @@ RULE_SCOPE = "Pick where the rule applies."
 RULE_DONE = {"active": "This rule is already switched on.", "dismissed": "This rule was dismissed."}
 RULE_TOO_LONG = "This rule would make some prompts too long; keep it to {n} words or fewer."
 IMAGE_GONE = "image not found"  # the files route's words: the image or its record is missing
+CROSS_SITE = "This request came from another site and was refused."
+READS = ("GET", "HEAD")  # the only methods a page on another site may use here
 FOLDERS = re.compile(r"(?:[\w.:~-]*[/\\])+(?=[\w.~-])")  # the folder part of a path, "/" or "\"
 SETTING_NAMES = re.compile(r"\b(?=STUDIO_|[A-Z0-9_]*(?:KEY|TOKEN|SECRET|ACCOUNT_ID))[A-Z][A-Z0-9_]{2,}\b")
 log = logging.getLogger(__name__)
 
 app = FastAPI(title="CSC Studio", dependencies=[Depends(current_user)])
+
+
+def cross_site(headers: Headers) -> bool:
+    """Whether the browser says this request came from another site: Sec-Fetch-Site other than same-origin or none
+    (typed or bookmarked), or an Origin whose host:port is not this request's Host. A request with neither header
+    (the CLI, curl, the tests) is not."""
+    site = headers.get("sec-fetch-site")
+    if site is not None and site.lower() not in ("same-origin", "none"):
+        return True
+    origin = headers.get("origin")
+    return origin is not None and urlsplit(origin).netloc.lower() != headers.get("host", "").lower()
+
+
+class SameOriginWrites:
+    """Refuses (403) a request that can change something (any method but GET or HEAD) when another site's page sent
+    it. A form or fetch from another site needs no preflight when it has no JSON body (POST check, POST dismiss), so
+    the JSON content type alone does not guard every route."""
+
+    def __init__(self, app):
+        self.app = app
+
+    async def __call__(self, scope, receive, send):
+        if scope["type"] == "http" and scope["method"] not in READS and cross_site(Headers(scope=scope)):
+            await JSONResponse({"error": CROSS_SITE}, 403)(scope, receive, send)
+            return
+        await self.app(scope, receive, send)
+
+
+app.add_middleware(SameOriginWrites)
 # DNS-rebinding guard: a page on another domain that resolves to 127.0.0.1 is refused.
 app.add_middleware(TrustedHostMiddleware, allowed_hosts=["127.0.0.1", "localhost"])
 

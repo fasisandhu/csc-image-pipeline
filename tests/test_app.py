@@ -427,3 +427,37 @@ def test_no_model_id_in_the_page():
         text = p.read_text(encoding="utf-8", errors="ignore")
         for model in ids:
             assert model not in text, (p.name, model)
+
+
+# --- cross-site requests (final review Minor 6) ---------------------------------------------------
+CROSS_SITE = {"error": "This request came from another site and was refused."}
+
+
+@pytest.mark.parametrize("headers", [
+    {"sec-fetch-site": "cross-site"},
+    {"sec-fetch-site": "same-site"},                                   # another port of this PC is another origin
+    {"origin": "https://evil.example"},
+    {"origin": "http://127.0.0.1:9999"},                               # same host, other port
+    {"origin": "null"},                                                # a sandboxed page or a file
+    {"origin": "http://127.0.0.1", "sec-fetch-site": "cross-site"},
+    {"origin": "https://evil.example", "sec-fetch-site": "same-origin"},
+])
+def test_cross_site_posts_are_refused(client, headers):
+    """A page on another site can post without a preflight when there is no JSON body (check, dismiss): any request
+    that changes something is refused when the browser says it came from elsewhere. Nothing runs."""
+    for path in ("/api/reviews/1/check", "/api/rules/0/dismiss", "/api/jobs"):
+        r = client.post(path, headers=headers, json={"answers": OAKMERE})
+        assert (r.status_code, r.json()) == (403, CROSS_SITE), (path, headers)
+    assert job_count() == 0
+    assert client.get("/api/health", headers=headers).status_code == 200  # reading is not refused
+
+
+@pytest.mark.parametrize("headers", [
+    {}, {"sec-fetch-site": "same-origin"}, {"sec-fetch-site": "none"}, {"origin": "http://127.0.0.1"},
+    {"origin": "http://127.0.0.1", "sec-fetch-site": "same-origin"},
+])
+def test_same_origin_posts_pass(client, headers):
+    """The page itself, the CLI, curl and the tests (no Origin, no Sec-Fetch-Site) are let through."""
+    assert client.post("/api/rules/0/dismiss", headers=headers).status_code == 404  # reached the route: no rule 0
+    r = client.post("/api/jobs", headers=headers, json={"answers": OAKMERE})
+    assert r.status_code == 201, r.text

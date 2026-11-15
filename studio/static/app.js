@@ -98,10 +98,17 @@
     list: "Couldn't load your recent images; check the studio is running.",
     lost: 'Lost touch with the studio while checking on your images. Check it is running, then check again.',
     unchecked: 'Not being checked: lost touch with the studio (see Recent images).',
+    changed: 'Your choices changed — check the cost again.',
   };
 
   function plainObject(v) { return v && typeof v === 'object' && !Array.isArray(v) ? v : {}; }
   function same(a, b) { return JSON.stringify(a) === JSON.stringify(b); }
+  function stable(v) {  // JSON with object keys sorted, so key order never makes two answers differ
+    if (Array.isArray(v)) return '[' + v.map(stable).join(',') + ']';
+    if (v && typeof v === 'object') return '{' + Object.keys(v).sort().map(k => JSON.stringify(k) + ':' + stable(v[k])).join(',') + '}';
+    return String(JSON.stringify(v));
+  }
+  function sameAnswers(a, b) { return stable(plainObject(a)) === stable(plainObject(b)); }
   function clone(v) { return JSON.parse(JSON.stringify(v)); }
   function money(n) { return '$' + Number(n).toFixed(2); }
   function capital(t) { return t ? t.charAt(0).toUpperCase() + t.slice(1) : t; }
@@ -643,32 +650,45 @@
       layoutNote() { return this.layout() ? 'Builds on sketch ' + this.chosen.n + ', your chosen layout.' : ''; },
       makeSketches() {
         if (!this.canSketch()) return null;
-        return this.sendJob({ answers: this.liveAnswers(), kind: 'drafts', confirm: false, layout: null });
+        const answers = this.liveAnswers();  // sketches take no layout: only the answers must still match
+        return this.sendJob({ answers, kind: 'drafts', confirm: false, layout: null }, { answers });
       },
       approve() {
         if (!this.canCreate()) return null;
-        return this.sendJob({ answers: this.liveAnswers(), kind: 'final', confirm: false, layout: this.layout() });
+        const answers = this.liveAnswers(), layout = this.layout();
+        return this.sendJob({ answers, kind: 'final', confirm: false, layout }, { answers, layout });
+      },
+      // screen: what the page showed when a request was made ({answers, layout?}). A confirm panel or a
+      // packshot gate is only shown, and only acted on, while the page still shows exactly that.
+      onScreen(screen) {
+        if (!screen || !sameAnswers(screen.answers, this.liveAnswers())) return false;
+        return screen.layout === undefined || (screen.layout || null) === (this.layout() || null);
+      },
+      choicesChanged() {
+        Object.assign(this.run, { confirm: null, anchor: null, error: JOB_NOTES.changed });
       },
       confirmCreate() {  // "Create" in the in-page confirm: the same request, confirmed
         const c = this.run.confirm;
-        return c ? this.sendJob({ ...c.body, confirm: true }) : null;
+        if (!c) return null;
+        if (!this.onScreen(c.screen)) { this.choicesChanged(); return null; }
+        return this.sendJob({ ...c.body, confirm: true }, c.screen);
       },
       cancelConfirm() { this.run.confirm = null; },
       confirmText() {
         const c = this.run.confirm;
         return c ? 'This will cost about ' + money(c.usd) + '. Create it?' : '';
       },
-      async sendJob(body) {  // one request at a time: the buttons are disabled until it is answered
+      async sendJob(body, screen) {  // one request at a time: the buttons are disabled until it is answered
         if (this.run.busy) return null;
         this.run.busy = true;
         Object.assign(this.run, { error: '', confirm: null });
         try {
-          return await this.postJob(body);
+          return await this.postJob(body, screen);
         } finally {
           this.run.busy = false;
         }
       },
-      async postJob(body) {
+      async postJob(body, screen) {
         let res, data;
         try {
           res = await fetch('/api/jobs', post(body));
@@ -681,10 +701,13 @@
           await this.watchNew(data.id, body);
           return data.id;
         }
-        if (res.status === 409 && data.needs_confirm === true && Number.isFinite(Number(data.estimate_usd))) {
-          this.run.confirm = { usd: Number(data.estimate_usd), body };
+        // an answer about choices the page no longer shows (changed while this was on its way) is dropped
+        if (!this.onScreen(screen)) {
+          this.choicesChanged();
+        } else if (res.status === 409 && data.needs_confirm === true && Number.isFinite(Number(data.estimate_usd))) {
+          this.run.confirm = { usd: Number(data.estimate_usd), body, screen };
         } else if (res.status === 409 && data.needs_anchor === true) {
-          this.showAnchorGate(data);
+          this.showAnchorGate(data, screen);
         } else {
           this.run.error = typeof data.error === 'string' && data.error.trim() ? capital(data.error.trim()) : JOB_NOTES.refused;
         }
@@ -703,29 +726,52 @@
         });
       },
 
-      // reference packshot gate: the shot needs an approved packshot of its colour first
-      async showAnchorGate(data) {
-        const gate = { message: String(data.error || ''), answers: plainObject(data.anchor_answers), cost: '' };
+      // reference packshot gate: the shot needs an approved packshot of its colour first.
+      // gate: {message, answers (the packshot's), screen (the shot it was asked for), cost, shotId, checking}
+      async showAnchorGate(data, screen) {
+        const gate = { message: String(data.error || ''), answers: plainObject(data.anchor_answers),
+                       screen: { answers: screen.answers }, cost: '', shotId: '', checking: true };
         this.run.anchor = gate;
-        try {  // its cost, from the same preview the summary uses (no image is made)
+        const mine = () => this.run.anchor && sameAnswers(this.run.anchor.answers, gate.answers);
+        try {  // its cost and shot id, from the same preview the summary uses (no image is made)
           const p = await api('/api/preview', post({ answers: gate.answers }));
-          if (this.run.anchor && same(this.run.anchor.answers, gate.answers) && typeof p.base_usd === 'number') {
-            this.run.anchor.cost = money(p.base_usd);
-          }
-        } catch (e) { /* the button keeps its fixed wording */ }
+          if (mine() && typeof p.base_usd === 'number') this.run.anchor.cost = money(p.base_usd);
+          if (mine() && typeof p.shot_id === 'string') this.run.anchor.shotId = p.shot_id;
+        } catch (e) {
+          /* the button keeps its fixed wording; the packshot is still found by its answers */
+        } finally {
+          if (mine()) this.run.anchor.checking = false;
+        }
+      },
+      anchorJob() {  // the packshot this gate would make, if one is being made or awaits approval
+        const a = this.run.anchor;
+        if (!a) return null;
+        const mine = j => j.kind === 'final' && ((a.shotId && j.shot_id === a.shotId) || sameAnswers(j.answers, a.answers));
+        return this.jobs.find(j => mine(j) && ACTIVE.has(j.status))
+          || this.jobs.find(j => mine(j) && j.status === 'done') || null;
+      },
+      anchorStatus() {  // replaces the button: never a second packshot while one is made or awaits approval
+        const j = this.anchorJob();
+        if (!j) return '';
+        return ACTIVE.has(j.status) ? JOB_NOTES.anchor : JOB_NOTES.anchorDone;
+      },
+      canMakeAnchor() {
+        const a = this.run.anchor;
+        return !!a && !a.checking && !this.run.busy && !this.anchorJob();
       },
       anchorButton() {
         const a = this.run.anchor;
+        if (a && a.checking) return 'Make the reference packshot first (checking the cost…)';
         return 'Make the reference packshot first (' + (a && a.cost ? 'about ' + a.cost : 'a standard image') + ')';
       },
       async makeAnchor() {
         const a = this.run.anchor;
-        if (!a) return;
-        const id = await this.sendJob({ answers: a.answers, kind: 'final', confirm: false, layout: null });
-        if (id !== null) {
-          this.run.anchorJobs.push(id);
-          this.run.anchor = null;
-        }
+        if (!this.canMakeAnchor()) return null;
+        if (!this.onScreen(a.screen)) { this.choicesChanged(); return null; }
+        // the gate stays open: its button becomes this packshot's status
+        const id = await this.sendJob({ answers: a.answers, kind: 'final', confirm: false, layout: null }, a.screen);
+        if (id !== null) this.run.anchorJobs.push(id);
+        return id;
       },
 
       // --- jobs: what the panel and the list show -----------------------------------------------
@@ -777,6 +823,7 @@
       isChosen(f) { return !!this.chosen && this.chosen.file === f; },
       choose(j, f, i) {  // a second click on the chosen sketch un-picks it
         if (!this.canChoose(j)) return;
+        this.run.confirm = null;  // a confirm was for the old layout
         this.chosen = this.isChosen(f) ? null
           : { file: f, n: i + 1, shotId: j.shot_id, caption: j.caption || '', words: this.jobWords(j) };
       },

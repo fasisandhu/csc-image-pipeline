@@ -179,3 +179,4 @@ button.disc { background:none; border:0; padding:0; font:inherit; font-size:12px
 .jobp .why { font-size:12.5px; }
 .sk span { text-align:center; line-height:1.25; padding:0 2px; }
 .rj-txt small.rj-cap { font-style:italic; }
+.panel-box .anchor-status { margin:0; font-weight:650; color:var(--ink); }

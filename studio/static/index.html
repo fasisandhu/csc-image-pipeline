@@ -284,8 +284,10 @@
           <template x-if="$store.studio.run.anchor">
             <div class="panel-box">
               <p x-text="$store.studio.run.anchor.message"></p>
-              <button type="button" class="btn acc wide" :disabled="$store.studio.run.busy"
+              <button type="button" class="btn acc wide" x-show="!$store.studio.anchorStatus()"
+                      :disabled="!$store.studio.canMakeAnchor()"
                       @click="$store.studio.makeAnchor()" x-text="$store.studio.anchorButton()"></button>
+              <p class="anchor-status" x-show="$store.studio.anchorStatus()" x-text="$store.studio.anchorStatus()"></p>
             </div>
           </template>
           <p class="run-err" x-show="$store.studio.run.error" x-text="$store.studio.run.error"></p>

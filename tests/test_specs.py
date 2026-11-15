@@ -4,6 +4,7 @@ import uuid
 import pytest
 
 from pipeline.compile import WORD_RANGE, CompileError, compile_spec, load_json
+from pipeline import specs as specs_mod
 from pipeline.specs import build_spec, colour_id, find_anchor, load_recipes, shot_id_for
 
 BASE = {"catalogue": "pullover-oversized", "colour": "washed-black", "gsm": 450,
@@ -114,10 +115,12 @@ def test_design_raises_tier_and_fills_decoration():
         "placement": "centre chest", "size_cm": 22, "render_mode": "generate_and_verify"}
 
 
-def test_anchor_attached_only_when_approved_file_exists():
+def test_anchor_attached_only_when_approved_file_exists(monkeypatch):
     assert find_anchor("pullover-oversized", "washed-black", 450) == "refs/anchors/pullover-oversized_washed-black_450_front.png"
     refs = build_spec(BASE)["set"]["reference_images"]
     assert [r["path"] for r in refs] == ["refs/anchors/pullover-oversized_washed-black_450_front.png"]
+    real = specs_mod.find_anchor
+    monkeypatch.setattr(specs_mod, "find_anchor", lambda cat, colour, gsm: None if colour == "olive" else real(cat, colour, gsm))
     assert build_spec({**BASE, "colour": "olive"})["set"]["reference_images"] == []
 
 

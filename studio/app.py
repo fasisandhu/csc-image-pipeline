@@ -44,7 +44,7 @@ NO_SKETCH = "Reference packshots are made without a sketch, so the garment comes
 BRAIN_BUSY = "Our AI helpers are busy right now; pick the options below."
 SERVICE_DOWN = "The image service is not available right now; try again in a moment."
 FOLDERS = re.compile(r"(?:[\w.:~-]*[/\\])+(?=[\w.~-])")  # the folder part of a path, "/" or "\"
-SETTING_NAMES = re.compile(r"\b(?=STUDIO_|[A-Z0-9_]*(?:KEY|TOKEN|SECRET))[A-Z][A-Z0-9_]{2,}\b")
+SETTING_NAMES = re.compile(r"\b(?=STUDIO_|[A-Z0-9_]*(?:KEY|TOKEN|SECRET|ACCOUNT_ID))[A-Z][A-Z0-9_]{2,}\b")
 log = logging.getLogger(__name__)
 
 app = FastAPI(title="CSC Studio", dependencies=[Depends(current_user)])
@@ -211,7 +211,7 @@ def estimate(spec: dict, kind: str = "final", layout_refs: list[str] = ()) -> di
 @app.exception_handler(BadAnswers)
 @app.exception_handler(CompileError)
 async def _unprocessable(request, e: Exception):
-    return JSONResponse({"error": file_names_only(str(e))}, 422)
+    return JSONResponse({"error": public_text(str(e))}, 422)
 
 
 @app.exception_handler(BrainError)

@@ -196,8 +196,9 @@ def test_files_refuses_traversal_and_other_dirs(client, out_file):
 @pytest.fixture
 def pinned_anchors(monkeypatch):
     """Only the washed-black reference packshot exists, whatever refs/anchors holds on this PC."""
-    monkeypatch.setattr(app_mod, "find_anchor", lambda cat, colour, gsm: (
-        "refs/anchors/x.png" if colour == "washed-black" else None))
+    fake = lambda cat, colour, gsm: "refs/anchors/x.png" if colour == "washed-black" else None  # noqa: E731
+    monkeypatch.setattr(app_mod, "find_anchor", fake)
+    monkeypatch.setattr("pipeline.specs.find_anchor", fake)
 
 
 def test_final_needs_anchor_409_with_anchor_answers(client, pinned_anchors):
@@ -362,6 +363,7 @@ def test_job_error_hides_setting_names(client):
 def test_public_text():
     assert app_mod.public_text("STUDIO_TOKEN and CF_API_TOKEN, MY_SECRET") == "a setting and a setting, a setting"
     assert app_mod.public_text("GSM 450 and HTML stay") == "GSM 450 and HTML stay"
+    assert app_mod.public_text("CLOUDFLARE_ACCOUNT_ID missing, bad ACCOUNT_ID") == "a setting missing, bad a setting"
     assert app_mod.public_text("see brand/x.png") == "see x.png"
 
 
@@ -509,3 +511,11 @@ def test_x_bind_objects_use_only_values_fixed_for_their_element():
         assert "$store" not in args.group(1), b
     assert 'x-for="f in $store.studio.shownFiles()" :key="f"' in html
     assert 'x-for="c in $store.studio.drawnStyle()" :key="c"' in html
+
+
+def test_422_hides_setting_names(client, monkeypatch):
+    def boom(spec, refs=()):
+        raise app_mod.CompileError("GEMINI_API_KEY and CLOUDFLARE_ACCOUNT_ID in brand/x.json")
+    monkeypatch.setattr(app_mod, "compile_spec", boom)
+    r = client.post("/api/preview", json={"answers": OAKMERE})
+    assert r.status_code == 422 and r.json() == {"error": "a setting and a setting in x.json"}

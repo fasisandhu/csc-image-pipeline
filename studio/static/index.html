@@ -47,6 +47,37 @@
   </aside>
 
   <main class="wrap">
+    <div class="col">
+    <!-- what do you want to make? the words fill in what they state; the person picks the rest -->
+    <form class="ask" @submit.prevent="$store.studio.fillFromWords()" :aria-busy="String($store.studio.brief.busy)">
+      <label class="lbl" for="brief-text">What do you want to make?</label>
+      <div class="field">
+        <input id="brief-text" class="in" type="text" maxlength="500" autocomplete="off"
+               placeholder="e.g. olive hoodie with something on the back"
+               x-model="$store.studio.brief.text">
+        <button type="submit" class="btn acc" :disabled="$store.studio.brief.busy || !$store.studio.brief.text.trim()">
+          <span class="spin" x-show="$store.studio.brief.busy" aria-hidden="true"></span>
+          <span x-text="$store.studio.brief.busy ? 'Reading your words…' : '✦ Fill from my words'"></span>
+        </button>
+      </div>
+      <div role="status" aria-live="polite">
+        <p class="found" x-show="$store.studio.briefFound()">Picked up:
+          <template x-for="(c, i) in $store.studio.pickedChips()" :key="i"><span class="chip" x-text="'✓ ' + c"></span></template>
+          <template x-if="$store.studio.customHint()">
+            <button type="button" class="chip hintchip" @click="$store.studio.editSection('colour')"
+                    x-text="'✎ ' + $store.studio.builder.custom.hint + ': pick the exact shade'"></button>
+          </template>
+          <template x-if="$store.studio.builder.custom.hint && !$store.studio.customHint()">
+            <span class="chip" x-text="'✓ ' + $store.studio.builder.custom.hint"></span>
+          </template>
+          <span x-text="$store.studio.missing.length ? '· we’ll ask about the rest' : '· that’s everything'"></span>
+        </p>
+        <p class="found none" x-show="$store.studio.briefNothing()" x-text="$store.studio.briefNothing()"></p>
+        <p class="ask-err" x-show="$store.studio.brief.error" x-text="$store.studio.brief.error"></p>
+        <p class="who" x-show="$store.studio.providerText()" x-text="$store.studio.providerText()"></p>
+      </div>
+    </form>
+
     <div id="builder">
       <div class="sec-note err" x-show="$store.studio.builder.error" role="status">
         <span x-text="$store.studio.builder.error"></span>
@@ -130,11 +161,12 @@
                          :value="$store.studio.builder.custom.name"
                          @input="$store.studio.setCustom('name', $event.target.value)"></label>
                 <label>Hex code
-                  <input type="text" maxlength="7" autocomplete="off" spellcheck="false" placeholder="#1F6F78"
+                  <input type="text" maxlength="7" autocomplete="off" spellcheck="false" placeholder="#RRGGBB"
                          class="hex" :value="$store.studio.builder.custom.hex"
                          @input="$store.studio.setCustom('hex', $event.target.value.trim())"></label>
                 <i class="live" aria-hidden="true" :style="'background:' + $store.studio.customSwatch()"></i>
-                <p class="why" role="status" x-text="$store.studio.customTouched() ? $store.studio.customProblem() : ''"></p>
+                <p class="from-words" x-show="$store.studio.customHint()" x-text="$store.studio.customHint()"></p>
+                <p class="why" role="status" x-text="$store.studio.customMessage()"></p>
               </div>
             </div>
           </template>
@@ -172,13 +204,54 @@
         </section>
       </template>
     </div>
+    </div>
     <div class="sum">
-      <div class="card">
-        <div class="prev"><span class="small">Sketch preview appears here</span></div>
-        <b>Your image</b>
-        <p class="small">Summary and cost appear here.</p>
+      <section class="card summary" aria-labelledby="sum-title">
+        <div class="prev">
+          <svg class="prev-h" viewBox="0 0 100 100" aria-hidden="true" focusable="false" x-show="$store.studio.answers.catalogue"
+               :fill="$store.studio.colourHex()"><use x-bind="$store.studio.hoodie($store.studio.answers.catalogue)"></use></svg>
+          <span class="small prev-note">Sketch preview appears here</span></div>
+        <h2 class="sum-title" id="sum-title">Your image</h2>
+        <template x-for="s in $store.studio.summaryRows()" :key="s.id">
+          <div class="li"><span x-text="$store.studio.rowLabel(s)"></span>
+            <span class="val"><span x-text="$store.studio.rowText(s)"></span><button type="button" class="ed"
+                  :aria-label="'Edit ' + $store.studio.rowLabel(s)" @click="$store.studio.editSection(s.id)">edit</button></span></div>
+        </template>
+        <p class="small empty" x-show="$store.studio.builder.loaded && !$store.studio.summaryRows().length">
+          Nothing chosen yet. Describe it above or pick below.</p>
+        <p class="todo" x-show="$store.studio.missingSections().length"><span class="small">Still to choose:</span>
+          <template x-for="s in $store.studio.missingSections()" :key="s.id">
+            <button type="button" class="ed todo-item" @click="$store.studio.editSection(s.id)"
+                    x-text="$store.studio.rowLabel(s)"></button>
+          </template></p>
+
+        <!-- cost and prompt: dimmed while the answers are being re-checked, so an old cost never reads as current -->
+        <div class="costbox" :aria-busy="String($store.studio.builder.waiting)">
+          <p class="upd" x-show="$store.studio.builder.waiting">updating&hellip;</p>
+          <div class="live-body" :class="{stale: $store.studio.builder.waiting}">
+          <template x-if="$store.studio.preview">
+            <div>
+              <div class="cost"><span class="small">Estimated cost</span><b x-text="$store.studio.costText()"></b></div>
+              <div class="small" x-text="$store.studio.worstText()"></div>
+              <div class="small tier" x-show="$store.studio.tierNote()" x-text="$store.studio.tierNote()"></div>
+              <p class="small why" x-show="$store.studio.routeNote()" x-text="$store.studio.routeNote()"></p>
+              <p class="small why" x-show="$store.studio.anchorNote()" x-text="$store.studio.anchorNote()"></p>
+              <ul class="notes" x-show="$store.studio.preview.warnings && $store.studio.preview.warnings.length"
+                  aria-label="Notes about this image">
+                <template x-for="(w, i) in ($store.studio.preview.warnings || [])" :key="i"><li x-text="w"></li></template>
+              </ul>
+              <button type="button" class="disc" aria-controls="full-prompt" :aria-expanded="String($store.studio.ui.promptOpen)"
+                      @click="$store.studio.togglePromptBox()"
+                      x-text="($store.studio.ui.promptOpen ? '▾ Hide' : '▸ Show') + ' the full prompt'"></button>
+              <pre class="prompt" id="full-prompt" x-show="$store.studio.ui.promptOpen" x-text="$store.studio.preview.prompt"></pre>
+            </div>
+          </template>
+          <p class="small" x-show="!$store.studio.preview && !$store.studio.builder.waiting && $store.studio.missing.length">
+            The cost appears once everything is chosen.</p>
+          </div>
+        </div>
         <p class="small why" x-show="$store.studio.builder.previewError" x-text="$store.studio.builder.previewError" role="status"></p>
-      </div>
+      </section>
       <div class="card jobs-card">
         <b>Your jobs</b>
         <p class="small">Jobs appear here.</p>

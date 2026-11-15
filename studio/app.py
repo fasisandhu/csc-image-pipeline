@@ -223,7 +223,7 @@ def preview(body: AnswersIn):
     est = estimate(spec)
     return {"shot_id": c.shot_id, "prompt": c.prompts["paragraph"],
             "warnings": [file_names_only(w) for w in c.warnings],
-            **{k: est[k] for k in ("base_usd", "worst_usd", "action", "reason")},
+            **{k: est[k] for k in ("base_usd", "worst_usd", "action", "reason", "tier")},
             "needs_anchor": needs_anchor(answers)}
 
 

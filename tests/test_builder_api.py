@@ -384,3 +384,28 @@ def test_every_section_has_a_tip(client):
     every = [s["id"] for s in json.loads((ROOT / "studio" / "questions" / "images.json").read_text(
         encoding="utf-8"))["sections"]]
     assert [s["id"] for s in sections] == every  # every section in the file, visible or not, carries one
+
+
+# --- fill from my words and the live summary (task 6) ----------------------------------------
+def test_brief_reports_provider_and_fallback(client, monkeypatch):
+    from studio.brain import BrainResult
+
+    class StandIn:  # what FallbackBrain returns when Gemini answers for Claude
+        def ask_json(self, task, prompt, schema, images=(), user="owner", **kw):
+            return BrainResult(data={"colour": "olive"}, provider="gemini", model="m",
+                               credential="subscription", seconds=0.1, cost_usd=0.001, fallback=True)
+    monkeypatch.setattr(app_mod, "get_brain", lambda user, fast=False: StandIn())
+    r = client.post("/api/brief", json={"text": "olive hoodie", "answers": {}})
+    assert r.status_code == 200, r.text
+    body = r.json()
+    assert (body["provider"], body["fallback"]) == ("gemini", True)  # the page says "Gemini (backup)"
+    assert "credential" not in body and "subscription" not in r.text  # never the credential type
+
+
+def test_preview_reports_route_tier(client):
+    """The summary's tier note comes from the router, never guessed by the page."""
+    plain = {**OAKMERE, "decoration": "none"}
+    for k in ("design", "technique", "placement", "size_cm"):
+        plain.pop(k)
+    assert client.post("/api/preview", json={"answers": OAKMERE}).json()["tier"] == "premium"
+    assert client.post("/api/preview", json={"answers": plain}).json()["tier"] == "standard"

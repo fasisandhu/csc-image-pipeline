@@ -87,6 +87,9 @@
     final: 'Creating your image… this can take a minute.',
     anchor: 'Making the reference packshot… this can take a minute.',
     pick: 'Click the layout you like; Approve & create builds on it.',
+    // a plain front packshot (it can become its colour's reference): the server says so in the preview
+    noSketch: 'Made without a sketch: a plain front packshot can become the reference for its colour, so its garment comes only from our catalogue.',
+    lookOnly: 'Reference packshots are made without a sketch; click one to see it larger.',
     otherShot: 'These sketches are for other choices than the ones above, so they cannot be picked. Make new sketches for this shot.',
     failed: 'Nothing was retried. You can try again with the buttons above.',
     noError: 'It stopped without saying why.',
@@ -1009,11 +1012,16 @@
       },
       sketchLabel() { return this.shotActive('drafts') ? 'Making sketches…' : 'See 3 free sketches'; },
       createLabel() { return this.shotActive('final') ? 'Creating your image…' : 'Approve & create'; },
-      layout() {  // the chosen sketch, only while it belongs to the shot on screen
+      // whether the shot on screen's final may build on a sketch (the preview's takes_sketch, from the server)
+      takesSketch() { return !!this.preview && this.preview.takes_sketch !== false; },
+      layout() {  // the chosen sketch, only while it belongs to the shot on screen and that shot takes one
         const c = this.chosen;
-        return c && c.shotId === this.currentShot() ? c.file : null;
+        return c && c.shotId === this.currentShot() && this.takesSketch() ? c.file : null;
       },
-      layoutNote() { return this.layout() ? 'Builds on sketch ' + this.chosen.n + ', your chosen layout.' : ''; },
+      layoutNote() {
+        if (this.currentShot() && !this.takesSketch()) return JOB_NOTES.noSketch;
+        return this.layout() ? 'Builds on sketch ' + this.chosen.n + ', your chosen layout.' : '';
+      },
       makeSketches() {
         if (!this.canSketch()) return null;
         const answers = this.liveAnswers();  // sketches take no layout: only the answers must still match
@@ -1195,7 +1203,14 @@
           : { file: f, n: i + 1, shotId: j.shot_id, caption: j.caption || '', words: this.jobWords(j) };
       },
       sketchAlt(j, i) { return 'Sketch ' + (i + 1) + ' of ' + this.jobWords(j); },
-      sketchHint(j) { return this.canChoose(j) ? JOB_NOTES.pick : JOB_NOTES.otherShot; },
+      sketchHint(j) {
+        if (!this.canChoose(j)) return JOB_NOTES.otherShot;
+        return this.takesSketch() ? JOB_NOTES.pick : JOB_NOTES.lookOnly;
+      },
+      tileText(f, i) {  // a sketch tile's words; a shot made without a sketch only shows the picked one larger
+        if (!this.isChosen(f)) return 'Sketch ' + (i + 1);
+        return this.takesSketch() ? '✓ chosen layout' : '✓ shown above';
+      },
       finalNote(j) { return this.isAnchor(j) ? JOB_NOTES.anchorDone : JOB_NOTES.review; },
       // the big preview's image and drawing as keyed lists of one: Alpine evaluates an x-bind object once,
       // so a new file or style must make a new element (else the old src or shape would stay)
@@ -1209,8 +1224,9 @@
         }
         const c = this.chosen;
         if (c) {
+          const role = c.shotId === this.currentShot() && !this.takesSketch() ? 'for looking only' : 'your chosen layout';
           return { file: c.file, alt: 'Sketch ' + c.n + ' of ' + c.words, caption: c.caption,
-                   label: 'Sketch ' + c.n + ' · your chosen layout · free, never published', note: '' };
+                   label: 'Sketch ' + c.n + ' · ' + role + ' · free, never published', note: '' };
         }
         return null;
       },

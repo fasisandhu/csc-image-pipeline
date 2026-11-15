@@ -377,7 +377,7 @@
                             :aria-pressed="String($store.studio.isChosen(f))" :disabled="!$store.studio.canChoose(j)"
                             @click="$store.studio.choose(j, f, i)">
                       <img x-bind="$store.studio.imgSrc(f)" :alt="$store.studio.sketchAlt(j, i)">
-                      <span x-text="$store.studio.isChosen(f) ? '✓ chosen layout' : 'Sketch ' + (i + 1)"></span>
+                      <span x-text="$store.studio.tileText(f, i)"></span>
                     </button>
                   </template>
                 </div>

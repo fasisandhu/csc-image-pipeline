@@ -22,7 +22,9 @@ REF_ROLES = {
     "anchor": "the exact garment; match colour, rib width and hood shape",
     "cast": "the exact person; match face, hair, skin tone and build",
     "artwork": "the logo artwork; reproduce its shapes, colours and any text exactly",
-    "layout": "a rough layout sketch; match its framing and pose only",
+    # a sketch's garment is a fast draft's guess: only its framing and pose may be copied (final review I1a)
+    "layout": ("a rough layout sketch; use only its framing and pose, and take every seam, the shoulder "
+               "construction, drawcords and all other garment details from the text, not from this sketch"),
 }
 
 

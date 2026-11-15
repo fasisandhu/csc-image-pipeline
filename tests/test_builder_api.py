@@ -240,6 +240,35 @@ def test_layout_must_be_a_draft_of_this_shot(client, monkeypatch):
     assert get_job(r.json()["id"])["layout"] == "out/drafts/a2.png"  # the stored sketch path, not the client's
 
 
+NO_SKETCH = {"error": "Reference packshots are made without a sketch, so the garment comes only from our catalogue."}
+PLAIN_PACKSHOT = {"purpose": "website", "catalogue": "pullover-oversized", "colour": "washed-black", "gsm": 450,
+                  "recipe": "packshot-front", "decoration": "none"}
+
+
+def test_reference_packshot_final_takes_no_sketch(client):
+    """A plain front packshot may become its colour's reference packshot, which later shots copy as "the exact
+    garment": its garment comes only from the catalogue, never from a sketch (final review I1c)."""
+    done_drafts(PLAIN_PACKSHOT, ["out/drafts/p1.png"])  # a real sketch of this very shot
+    before = job_count()
+    for layout in ("out/drafts/p1.png", "out/drafts/zz-none.png", ""):
+        r = client.post("/api/jobs", json={"answers": PLAIN_PACKSHOT, "kind": "final", "layout": layout})
+        assert (r.status_code, r.json()) == (422, NO_SKETCH), layout
+    assert job_count() == before
+    r = client.post("/api/jobs", json={"answers": PLAIN_PACKSHOT, "kind": "final", "layout": None})
+    assert r.status_code == 201 and get_job(r.json()["id"])["layout"] is None
+    # sketches of it are still free to make (for looking), and a decorated packshot still builds on one
+    assert client.post("/api/jobs", json={"answers": PLAIN_PACKSHOT, "kind": "drafts"}).status_code == 201
+    done_drafts(OAKMERE, ["out/drafts/o1.png"])
+    assert client.post("/api/jobs", json={"answers": OAKMERE, "kind": "final",
+                                          "layout": "out/drafts/o1.png"}).status_code == 201
+
+
+def test_preview_says_whether_a_final_takes_a_sketch(client):
+    assert client.post("/api/preview", json={"answers": PLAIN_PACKSHOT}).json()["takes_sketch"] is False
+    assert client.post("/api/preview", json={"answers": OAKMERE}).json()["takes_sketch"] is True
+    assert client.post("/api/preview", json={"answers": OLIVE_ON_MODEL}).json()["takes_sketch"] is True
+
+
 def test_final_job_passes_layout_to_compile(client, out_file):
     sketch = out_file()
     done_drafts(OAKMERE, [sketch])

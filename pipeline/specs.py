@@ -8,10 +8,11 @@ import hashlib
 import json
 import re
 
-from .compile import REF_ROLES, ROOT, CompileError, load_json, resolve_colour
+from .compile import REF_ROLES, ROOT, CompileError, is_missing, load_json, resolve_colour
 from .designs import design_for
 
 NO_TEXT, NO_OTHER_TEXT = "text or logos", "any other text or logos"
+ANY_SHOULDER = "the shoulder seams"  # a recipe's style-neutral item, made exact by the catalogue's shoulder
 SHOT_KEYS = ("catalogue", "colour", "gsm", "recipe", "decoration")
 MODEL_KEYS = ("cast", "scene")
 DESIGN_KEYS = ("design", "technique", "placement", "size_cm")
@@ -44,6 +45,18 @@ def _decorated(answers: dict) -> bool:
 def _avoid(items: list[str], decorated: bool) -> list[str]:
     """A decorated shot carries its design: it avoids only other text or logos."""
     return [NO_OTHER_TEXT if decorated and x == NO_TEXT else x for x in items]
+
+
+def _must_show(recipe: dict, cat: dict) -> list[str]:
+    """The recipe's must-show items plus the catalogue's shoulder seams ("dropped shoulder seams"), in place of a
+    generic "the shoulder seams" item, so a final draws the style's own shoulder (final review I1b). Nothing is
+    added while the shoulder is unset (TODO), or on a recipe whose framing leaves the shoulders out."""
+    must = list(recipe["must_show"])
+    shoulder = cat.get("shoulder")
+    if is_missing(shoulder) or not recipe.get("shows_shoulders", True):
+        return must
+    seams = f"{shoulder} shoulder seams"
+    return [seams if m == ANY_SHOULDER else m for m in must] if ANY_SHOULDER in must else must + [seams]
 
 
 def _number(v):
@@ -91,6 +104,7 @@ def build_spec(answers: dict, creative: dict | None = None) -> dict:
     recipe = recipes["recipes"][answers["recipe"]]
     if not (ROOT / "catalogue" / f"{answers.get('catalogue')}.json").exists():
         raise CompileError(f"unknown catalogue entry {answers.get('catalogue')!r}")
+    cat = load_json(f"catalogue/{answers['catalogue']}.json")
     brand = load_json("brand/brand.json")
     resolve_colour(answers["colour"])  # fail early on an unknown colour
 
@@ -136,7 +150,7 @@ def build_spec(answers: dict, creative: dict | None = None) -> dict:
             "lighting": lighting,
             "background": background,
             "model": model,
-            "must_show": list(recipe["must_show"]),
+            "must_show": _must_show(recipe, cat),
             "avoid": _avoid(recipe["avoid"], _decorated(answers)),
         },
     }

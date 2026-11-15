@@ -38,6 +38,7 @@ MAX_JOBS = 100  # most jobs one list request returns
 ANCHOR_FIRST = ("This colour has no approved reference packshot yet. "
                 "Make it first, then this shot can use it.")
 PICK_A_SKETCH = "pick a sketch from this shot"
+NO_SKETCH = "Reference packshots are made without a sketch, so the garment comes only from our catalogue."
 FOLDERS = re.compile(r"(?:[\w.:~-]*[/\\])+(?=[\w.~-])")  # the folder part of a path, "/" or "\"
 
 app = FastAPI(title="CSC Studio", dependencies=[Depends(current_user)])
@@ -121,6 +122,13 @@ def anchor_answers(answers: dict) -> dict:
     """The plain front packshot of the same garment: the shot that becomes the missing anchor."""
     return {**{k: answers[k] for k in ("purpose", "catalogue", "colour", "gsm")},
             "recipe": "packshot-front", "decoration": "none"}
+
+
+def takes_sketch(answers: dict) -> bool:
+    """Whether a final of this shot may build on a sketch. A plain front packshot may not: it can become its
+    colour's reference packshot, which later shots copy as "the exact garment", so a sketch's garment errors
+    would spread to all of them. Its garment comes only from the catalogue (final review I1c)."""
+    return not (answers["recipe"] == "packshot-front" and answers.get("decoration") == "none")
 
 
 def picked_sketch(user: str, kind: str, layout: str, shot_id: str) -> str | None:
@@ -232,7 +240,7 @@ def preview(body: AnswersIn):
     return {"shot_id": c.shot_id, "prompt": c.prompts["paragraph"],
             "warnings": [file_names_only(w) for w in c.warnings],
             **{k: est[k] for k in ("base_usd", "worst_usd", "action", "reason", "tier")},
-            "needs_anchor": needs_anchor(answers)}
+            "needs_anchor": needs_anchor(answers), "takes_sketch": takes_sketch(answers)}
 
 
 @app.post("/api/jobs", status_code=201)
@@ -241,6 +249,8 @@ def create_job(body: JobIn, user: str = Depends(current_user)):
     spec = build_spec(answers)
     layout = None
     if body.layout is not None:
+        if body.kind == "final" and not takes_sketch(answers):
+            return JSONResponse({"error": NO_SKETCH}, 422)
         layout = picked_sketch(user, body.kind, body.layout, spec["shot"]["shot_id"])
         if layout is None:
             return JSONResponse({"error": PICK_A_SKETCH}, 422)

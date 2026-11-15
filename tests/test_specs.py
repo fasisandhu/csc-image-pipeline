@@ -1,4 +1,5 @@
 import re
+import uuid
 
 import pytest
 
@@ -215,3 +216,45 @@ def test_placement_must_suit_recipe_view():
         build_spec({**OM_BACK, **DESIGN, "placement": "centre chest"})
     spec = build_spec({**OM_BACK, **DESIGN, "placement": "full back", "size_cm": 30})
     compile_spec(spec)
+
+
+# --- final review I1: a sketch never carries its garment into a final ----------------------------
+LAYOUT_ROLE = ("a rough layout sketch; use only its framing and pose, and take every seam, the shoulder "
+               "construction, drawcords and all other garment details from the text, not from this sketch")
+
+
+def test_layout_role_takes_only_framing_and_pose():
+    from pipeline.compile import REF_ROLES, ROOT
+    assert REF_ROLES["layout"] == LAYOUT_ROLE
+    sketch = ROOT / "out" / "drafts" / f"zz-test-{uuid.uuid4().hex[:8]}.png"  # git-ignored, removed below
+    sketch.parent.mkdir(parents=True, exist_ok=True)
+    sketch.write_bytes(b"\x89PNG\r\n\x1a\n-test")
+    try:
+        spec = build_spec({**BASE, **DESIGN, "recipe": "on-model-front", "cast": "Maya", "scene": "warm-studio"})
+        with_sketch = compile_spec(spec, [sketch.relative_to(ROOT).as_posix()])
+        without = compile_spec(spec)
+    finally:
+        sketch.unlink(missing_ok=True)
+    n = next(i + 1 for i, r in enumerate(with_sketch.refs) if r["path"] == sketch.relative_to(ROOT).as_posix())
+    assert with_sketch.refs[n - 1]["role"] == LAYOUT_ROLE
+    assert f"Image {n} is {LAYOUT_ROLE}." in with_sketch.prompts["paragraph"]
+    assert with_sketch.word_count == without.word_count  # reference-role lines do not count toward the limit
+
+
+@pytest.mark.parametrize("catalogue, want", [
+    ("pullover-oversized", "dropped shoulder seams"),
+    ("pullover-classic", "set-in shoulder seams"),
+    ("zip", None),  # its shoulder is still TODO in the catalogue: nothing is asked for
+])
+def test_shoulder_seams_are_a_must_show(catalogue, want):
+    for recipe in ("packshot-front", "packshot-back", "flat-lay", "on-model-front", "on-model-back"):
+        a = {**BASE, "catalogue": catalogue, "recipe": recipe, "cast": "Maya", "scene": "warm-studio"}
+        must = build_spec(a)["shot"]["must_show"]
+        shoulder = [m for m in must if "shoulder" in m]
+        assert shoulder == ([want] if want else (["the shoulder seams"] if recipe == "on-model-front" else [])), \
+            (recipe, must)
+        if want:
+            assert f"Shows: {want}" in compile_spec(build_spec(a)).qa
+    # the close-up frames the decoration, not the shoulders
+    closeup = build_spec({**BASE, **DESIGN, "catalogue": catalogue, "recipe": "decoration-closeup"})
+    assert not any("shoulder" in m for m in closeup["shot"]["must_show"])

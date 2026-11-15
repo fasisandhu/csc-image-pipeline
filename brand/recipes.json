@@ -1,5 +1,5 @@
 {
-  "_note": "Shot types and scenes for the dashboard. Text is style-neutral: fit, shoulder, pockets and zip come from catalogue/ through the compiler, never from here. Keep every compiled prompt inside CLAUDE.md's 120-220 words (tests/test_specs.py checks every combination). On-model recipes take background and lighting from the chosen scene; packshots ignore the scene. requires_decoration: the shot has nothing to show without a design.",
+  "_note": "Shot types and scenes for the dashboard. Text is style-neutral: fit, shoulder, pockets and zip come from catalogue/ through the compiler, never from here. Keep every compiled prompt inside CLAUDE.md's 120-220 words (tests/test_specs.py checks every combination). On-model recipes take background and lighting from the chosen scene; packshots ignore the scene. requires_decoration: the shot has nothing to show without a design. pipeline/specs.py adds the catalogue's \"<shoulder> shoulder seams\" to must_show (in place of a generic \"the shoulder seams\") unless shows_shoulders is false: a framing that leaves the shoulders out.",
   "recipes": {
     "packshot-front": {
       "label": "Packshot, front",
@@ -127,6 +127,7 @@
       "aspect": "4:5",
       "resolution": "2K",
       "requires_decoration": true,
+      "shows_shoulders": false,
       "placements": [
         "left chest",
         "centre chest",

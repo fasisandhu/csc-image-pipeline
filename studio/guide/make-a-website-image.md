@@ -18,6 +18,8 @@ The **Your image** card lists every choice and the estimated cost, plus the most
 
 **See {{sketches.count}} free sketches** makes quick, rough layouts at no cost. Click the one you like, and **Approve & create** builds on its layout. Sketches are only for trying ideas; they never go on the website.
 
+A plain front packshot is the exception: it can become the reference for its colour, so it is always made without a sketch and its garment comes only from our catalogue.
+
 ## 5. Approve & create
 
 This makes the real image. Anything estimated over ${{budget.ask_over_usd}} asks you to confirm first, and spending never passes ${{budget.cap_usd}} a month.

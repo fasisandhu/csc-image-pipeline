@@ -241,6 +241,20 @@ def record_qa(entry: dict, image: str | Path, codes: list[str], colour: dict, no
                           "colour": colour, "note": note, "next": action, "next_code": code, **extra})
 
 
+REJECT_ACTIONS = ("repair", "regenerate", "flag", "composite")  # a render judged bad leaves out/finals
+
+
+def move_to_reject(image: Path, rel_image: str | None = None) -> Path:
+    """Move a render judged bad to out/reject/ and log the move, so ledger.find keeps its root and the
+    repair and regeneration limits count it. Shared by this CLI and the studio's review chain."""
+    rel_image = rel_image or rel(image)
+    dest = ROOT / "out" / "reject" / image.name
+    dest.parent.mkdir(parents=True, exist_ok=True)
+    shutil.move(image, dest)
+    ledger.record({"event": "moved", "file": rel_image, "moved_to": dest.relative_to(ROOT).as_posix()})
+    return dest
+
+
 def checklist(shot_id: str) -> list[str]:
     compiled = ROOT / "prompts" / f"{shot_id}.json"
     if compiled.exists():
@@ -298,11 +312,8 @@ def main() -> int:
     record_qa(entry, image, codes, colour, args.note, action, code)
     print(f"verdict {'pass' if not codes else 'fail'}  codes {codes or '-'}  next: {action}{' ' + code if code else ''}")
 
-    if action in ("repair", "regenerate", "flag", "composite"):
-        dest = ROOT / "out" / "reject" / image.name
-        dest.parent.mkdir(parents=True, exist_ok=True)
-        shutil.move(image, dest)
-        ledger.record({"event": "moved", "file": rel_image, "moved_to": dest.relative_to(ROOT).as_posix()})
+    if action in REJECT_ACTIONS:
+        dest = move_to_reject(image, rel_image)
         print(f"moved   -> {dest.relative_to(ROOT).as_posix()}")
     if action == "flag":
         print("FLAG    two repairs and two regenerations used; needs the user's decision")

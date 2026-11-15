@@ -35,7 +35,8 @@
     },
     "unintended_text": {
       "fix": "repair",
-      "instruction": "remove all text, letters and logos from the garment and background, leaving plain fabric"
+      "instruction": "remove all text, letters and logos from the garment and background, leaving plain fabric",
+      "instruction_decorated": "remove any text, letters or logos other than the {text} {technique} at the {placement}, leaving the rest of the garment and background plain"
     },
     "logo_text": {
       "fix": "repair",

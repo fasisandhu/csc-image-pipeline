@@ -135,6 +135,31 @@ def test_invalid_codes_and_lines_dropped(env):
     assert qa_events(env.rows)[-1]["next"] == "flag"
 
 
+def test_disagreeing_answers_for_one_line_are_not_checked():
+    """Two different verdicts for one line leave it 'not checked' (a person looks), not first-wins."""
+    checklist = ["Two drawcords, equal length, metal aglets, through eyelets", "Hood double-layer with centre seam",
+                 "Shows: rib cuffs and hem"]
+    brain = FakeBrain(lambda texts: {"lines": [
+        {"text": checklist[0], "ok": True, "code": None, "note": "fine"},
+        {"text": checklist[0], "ok": False, "code": "drawcord_shape", "note": "round cords"},
+        {"text": checklist[1], "ok": False, "code": "hood_shape", "note": "flat hood"},
+        {"text": checklist[1], "ok": False, "code": "rib_width", "note": "flat hood"},
+        {"text": checklist[2], "ok": False, "code": "rib_width", "note": "thin"},
+        {"text": checklist[2], "ok": False, "code": "made_up_code", "note": "thin again"},  # -> code None: differs
+        {"text": checklist[2], "ok": "no", "code": None, "note": "not a verdict, ignored"},
+    ]})
+    v = visual_review(IMAGE, checklist, brain)
+    by = {line["text"]: line for line in v["lines"]}
+    assert by[checklist[0]]["ok"] is None and by[checklist[0]]["code"] is None  # ok disagrees
+    assert by[checklist[1]]["ok"] is None and by[checklist[1]]["code"] is None  # code disagrees
+    assert by[checklist[2]]["ok"] is None
+
+    agree = FakeBrain(lambda texts: {"lines": [
+        {"text": t, "ok": True, "code": None, "note": n} for t in checklist for n in ("first", "second")]})
+    v = visual_review(IMAGE, checklist, agree)
+    assert all(line["ok"] is True and line["note"] == "first" for line in v["lines"])  # agreeing repeats are fine
+
+
 @pytest.mark.parametrize("answer", [
     {"lines": []},
     {},

@@ -103,7 +103,8 @@ def visual_review(image: Path, checklist: list[str], brain: Brain, user: str = "
     """Judge each checklist line by eye. Returns {"lines": [{text, ok, code, note}], "provider", "fallback"}.
 
     Only the given lines and the known reason codes survive: an invented line or code is dropped, a line the
-    brain did not judge comes back ok None ("not checked"), and a passing line carries no code.
+    brain did not judge comes back ok None ("not checked"), and a passing line carries no code. A line judged
+    twice with different verdicts (ok or code) is not checked either: neither answer is trusted.
     """
     texts = list(dict.fromkeys(checklist))
     if not texts:
@@ -135,15 +136,20 @@ def visual_review(image: Path, checklist: list[str], brain: Brain, user: str = "
     res = brain.ask_json("visual_review", prompt, schema, images=[Path(image)], user=user)
     data = res.data if isinstance(res.data, dict) else {}
     answers = data.get("lines") if isinstance(data.get("lines"), list) else []
-    known, judged = set(codes), {}
+    known, judged, torn = set(codes), {}, set()
     for a in answers:
-        if not isinstance(a, dict) or a.get("text") not in texts or a["text"] in judged:
-            continue  # an invented line, or a second answer for one already judged
+        if not isinstance(a, dict) or a.get("text") not in texts:
+            continue  # an invented line
         if not isinstance(a.get("ok"), bool):
             continue  # no verdict: the line stays "not checked"
         code = a.get("code")
         code = code if not a["ok"] and isinstance(code, str) and code in known else None
         note = a.get("note") if isinstance(a.get("note"), str) else ""
-        judged[a["text"]] = {"text": a["text"], "ok": a["ok"], "code": code, "note": " ".join(note.split())[:_NOTE_MAX]}
-    lines = [judged.get(t) or {"text": t, "ok": None, "code": None, "note": ""} for t in texts]
+        first = judged.setdefault(a["text"], {"text": a["text"], "ok": a["ok"], "code": code,
+                                              "note": " ".join(note.split())[:_NOTE_MAX]})
+        if (first["ok"], first["code"]) != (a["ok"], code):
+            torn.add(a["text"])  # two different verdicts for one line
+    lines = [judged[t] if t in judged and t not in torn else
+             {"text": t, "ok": None, "code": None, "note": "The AI gave two different answers." if t in torn else ""}
+             for t in texts]
     return {"lines": lines, "provider": res.provider, "fallback": res.fallback}

@@ -115,6 +115,22 @@
   function reducedMotion() {
     try { return window.matchMedia('(prefers-reduced-motion: reduce)').matches; } catch (e) { return false; }
   }
+  function scrollMode() { return reducedMotion() ? 'auto' : 'smooth'; }
+  // the builder's sections in the page: found by their heading id, so a section's DOM is never cached
+  function sectionEl(id) { const h = document.getElementById('sec-' + id); return h ? h.closest('section') : null; }
+  function shown(el) { return !!el && el.getClientRects().length > 0; }  // display:none has no boxes
+  function firstShown(root, selector) { return root ? Array.from(root.querySelectorAll(selector)).find(shown) || null : null; }
+  // the section in use keeps its place on screen while a section above it folds or opens
+  function holdPlace(id) {
+    const el = sectionEl(id);
+    if (!el) return;
+    const top = el.getBoundingClientRect().top;
+    window.Alpine.nextTick(() => {
+      const now = sectionEl(id);
+      const shift = now ? now.getBoundingClientRect().top - top : 0;
+      if (Math.abs(shift) >= 1) window.scrollBy({ top: shift, left: 0, behavior: 'instant' });
+    });
+  }
   // an output image the server may serve (out/drafts, out/finals): each path segment URL-encoded
   function fileUrl(path) { return '/api/files/' + String(path).split('/').map(encodeURIComponent).join('/'); }
   function jobFiles(j) {
@@ -135,6 +151,9 @@
   let previewTimer = null, previewSeq = 0, previewOpen = 0;
   let wordsReveal = false;  // the next questions reply shows sections opened by "Fill from my words"
   const edits = {};  // section id -> how often the person set it: a brief reply never overrides a newer edit
+  // folding: touchSeq counts the person's acts in the builder; briefJump is touchSeq when words were
+  // filled in, so the next questions reply moves to the first gap only if the person did nothing since
+  let touchSeq = 0, briefJump = null;
   let pollTimer = null, pollBusy = false, pollFails = 0;  // one status check of the active jobs at a time
 
   // --- store ----------------------------------------------------------------------------------
@@ -145,12 +164,15 @@
       // sections / missing: the question list from /api/questions, in server order
       sections: [],
       missing: [],
-      // builder: page state of the sections (NEW badges, open tips, custom colour fields)
+      // builder: page state of the sections (NEW badges, open tips, custom colour fields, folding)
       builder: {
         loaded: false, error: '', previewError: '', announce: '',
         seen: null, fresh: [], byWords: [], tips: {},
         custom: { open: false, name: '', hex: '', hint: '' },  // hint: a colour word from the brief
         waiting: false,  // answers changed and the options or cost are not back yet
+        // active: the section in use (the last one the person acted in, or opened with Change); it stays
+        // open while answered sections fold. showAll: "Show all options" (this visit only)
+        active: null, showAll: false,
       },
       // brief: the "What do you want to make?" box. picked: {section id: value} the last words filled in;
       // owned: every value words filled in this visit (new words may replace those the person left alone)
@@ -241,6 +263,7 @@
           if (seq === questionsSeq) {
             this.builder.error = NOTES.options;
             this.preview = null;  // its cost is for answers that have changed since
+            briefJump = null;  // no fresh sections to move to
           }
           return;
         } finally {
@@ -250,6 +273,11 @@
         if (seq !== questionsSeq || questionsTimer) return;  // newer answers are on their way
         this.builder.error = '';
         this.applySections(res, sent);
+        if (briefJump !== null) {  // words were just filled in: go to what is still missing
+          const due = briefJump === touchSeq;
+          briefJump = null;
+          if (due) window.Alpine.nextTick(() => this.showFirstGap());
+        }
         if (this.missing.length) {
           this.preview = null;
           this.builder.previewError = '';
@@ -260,11 +288,11 @@
       applySections(res, sent) {
         // drop what the server dropped (unless it was changed again since this request)
         const kept = new Set(res.sections.filter(s => s.value !== null && s.value !== undefined).map(s => s.id));
-        let dropped = false;
+        const dropped = [];
         for (const k of Object.keys(sent)) {
-          if (!kept.has(k) && same(this.answers[k], sent[k])) { delete this.answers[k]; dropped = true; }
+          if (!kept.has(k) && same(this.answers[k], sent[k])) { delete this.answers[k]; dropped.push(k); }
         }
-        if (dropped) this.saveDraft();
+        if (dropped.length) this.saveDraft();
         // NEW badges: sections that were hidden on the last reply; kept until answered or hidden again
         const b = this.builder;
         const visible = res.sections.filter(s => s.visible).map(s => s.id);
@@ -273,10 +301,13 @@
         b.byWords = b.byWords.filter(id => b.fresh.includes(id)).concat(wordsReveal ? added : []);
         wordsReveal = false;
         b.seen = visible;
-        if (added.length) {
-          const titles = res.sections.filter(s => added.includes(s.id)).map(s => s.title);
-          b.announce = 'New questions: ' + titles.join(', ') + '.';
-        }
+        // a visible section whose answer was dropped has no answer now, so it opens again: say so
+        const titles = ids => res.sections.filter(s => ids.includes(s.id)).map(s => s.title).join(', ');
+        const lost = dropped.filter(id => visible.includes(id));
+        const said = [];
+        if (added.length) said.push('New questions: ' + titles(added) + '.');
+        if (lost.length) said.push('Choose again: ' + titles(lost) + '.');
+        if (said.length) b.announce = said.join(' ');
         this.sections = res.sections;
         this.missing = res.missing;
         b.loaded = true;
@@ -295,6 +326,72 @@
       tipLabel(s) { return 'More about \u201c' + s.title + '\u201d'; },
       toggleTip(s) { this.builder.tips[s.id] = !this.builder.tips[s.id]; },
       tipOpen(s) { return !!this.builder.tips[s.id]; },
+
+      // --- builder: folding (ask only what is missing) ----------------------------------------
+      // An answered section folds to one line ("Colour ✓ Olive · Change") unless it is the section in use
+      // or "Show all options" is on. An unanswered section never folds, so one whose answer the server
+      // dropped opens again by itself. Hidden (not applicable) sections stay hidden as before.
+      isAnswered(s) { return this.optionLabel(s, this.answers[s.id]) !== ''; },
+      isFolded(s) { return !this.builder.showAll && this.builder.active !== s.id && this.isAnswered(s); },
+      canDone(s) { return !this.builder.showAll && this.builder.active === s.id && this.isAnswered(s); },
+      anyAnswered() { return this.visibleSections().some(s => this.isAnswered(s)); },
+      foldNote() {
+        return this.builder.showAll ? 'Showing every option.'
+          : 'Choices already made are folded; press Change to edit one.';
+      },
+      showAllLabel() { return this.builder.showAll ? 'Show only what\u2019s left' : 'Show all options'; },
+      changeLabel(s) { return 'Change \u201c' + s.title + '\u201d, now ' + this.rowText(s); },
+      doneLabel(s) { return 'Done with \u201c' + s.title + '\u201d'; },
+      touch(id) {  // the person acted in (or opened) a section: it is the one in use; the last one may fold
+        touchSeq++;
+        if (this.builder.active === id) return;
+        holdPlace(id);
+        this.builder.active = id;
+      },
+      change(s) {  // "Change" on a folded row: open it in place and put the keyboard on its choice
+        this.touch(s.id);
+        window.Alpine.nextTick(() => this.focusChoice(s.id, null));
+      },
+      done(s) {  // "Done": fold the section in use and give the keyboard back to its row
+        touchSeq++;
+        if (this.builder.active === s.id) this.builder.active = null;
+        window.Alpine.nextTick(() => {
+          const row = document.getElementById('chg-' + s.id);
+          if (shown(row)) row.focus();
+        });
+      },
+      toggleShowAll() {  // "Show only what's left" folds every answered section, the one in use too
+        touchSeq++;
+        this.builder.showAll = !this.builder.showAll;
+        this.builder.active = null;
+      },
+      focusChoice(id, block) {  // put the keyboard on a section's choice; block: also scroll it there
+        const sec = sectionEl(id);
+        if (!sec) return;
+        if (block) sec.scrollIntoView({ behavior: scrollMode(), block });
+        const body = document.getElementById('body-' + id);
+        let target = null;
+        if (id === 'colour' && this.builder.custom.open) {
+          target = firstShown(body, this.builder.custom.name ? '#custom-colour .hex' : '#custom-colour input');
+        }
+        target = target || firstShown(body, '[aria-pressed="true"]:not(:disabled)')
+          || firstShown(body, 'input:not(:disabled), .row button:not(:disabled), .seg button:not(:disabled)')
+          || firstShown(sec, 'h4');  // nothing to pick (e.g. no maximum size yet): its heading
+        if (target) target.focus({ preventScroll: !!block });
+      },
+      showFirstGap() {  // after words were filled in: the first section still to answer, else the summary
+        const gap = this.visibleSections().find(s => !this.isAnswered(s));
+        if (gap) {  // scrolled to only if its head is not already in the upper part of the screen,
+          // so "Picked up: …" stays in sight when the gap is just below it
+          const el = sectionEl(gap.id), top = el ? el.getBoundingClientRect().top : -1;
+          this.focusChoice(gap.id, top >= 0 && top < window.innerHeight * 0.6 ? null : 'start');
+          return;
+        }
+        const card = document.getElementById('summary');
+        if (!shown(card)) return;
+        card.scrollIntoView({ behavior: scrollMode(), block: 'nearest' });
+        card.focus({ preventScroll: true });
+      },
 
       // --- builder: answers -----------------------------------------------------------------
       setAnswer(id, value) {  // every pick, custom colour edit and size change by the person comes here
@@ -315,6 +412,7 @@
       },
       pick(s, o) {
         if (o.disabled) return;
+        this.touch(s.id);
         if (s.kind === 'colour') Object.assign(this.builder.custom, { open: false, hint: '' });
         this.setAnswer(s.id, NUMERIC.has(s.id) ? Number(o.id) : o.id);
       },
@@ -333,10 +431,12 @@
         return o && HEX_RE.test(o.sub) ? o.sub : NO_COLOUR;
       },
       openCustom() {
+        this.touch('colour');
         this.builder.custom.open = true;
         this.applyCustom();
       },
-      setCustom(field, value) {
+      setCustom(field, value) {  // the colour section stays open while its name and hex are typed
+        this.touch('colour');
         this.builder.custom[field] = value;
         this.applyCustom();
       },
@@ -372,7 +472,8 @@
         const where = this.answers.placement ? this.answers.placement + ' ' : '';
         return '\u00b7 ' + where + 'maximum is ' + Number(s.max) + ' cm, so larger sizes are not offered';
       },
-      setSize(value) {
+      setSize(value) {  // the size section stays open while the slider is moved
+        this.touch('size_cm');
         const n = Number(value);
         if (n > 0 && n !== this.answers.size_cm) this.setAnswer('size_cm', n);
       },
@@ -420,6 +521,7 @@
         if (!text || b.busy) return;
         Object.assign(b, { busy: true, error: '', done: false, picked: {}, hint: '', provider: '', fallback: false });
         const before = clone(this.answers), seen = { ...edits };  // to leave alone what the person changes meanwhile
+        const acts = touchSeq;  // the person's acts so far: one made while the words are read keeps its section open
         // The server keeps every answer it is sent, so only the person's own picks of visible sections go:
         // hidden sections' old answers and earlier words' picks the person never set can be replaced by new words.
         const sent = {}, live = clone(this.liveAnswers());
@@ -443,9 +545,9 @@
           b.error = res.status === 503 ? NOTES.briefBusy : NOTES.briefFailed;
           return;
         }
-        this.applyBrief(data, sent, before, seen);
+        this.applyBrief(data, sent, before, seen, acts);
       },
-      applyBrief(data, sent, before, seen) {
+      applyBrief(data, sent, before, seen, acts) {
         const b = this.brief, got = plainObject(data.answers);
         const untouched = k => edits[k] === seen[k] && same(this.answers[k], before[k]);  // not set during the request
         let changed = false;
@@ -473,6 +575,12 @@
         b.fallback = data.fallback === true;
         b.done = true;
         wordsReveal = true;
+        // every answered section folds and the next questions reply moves the page to the first gap,
+        // unless the person acted in the builder while the words were read: their section stays as it is
+        if (acts === touchSeq) {
+          this.builder.active = null;
+          briefJump = touchSeq;
+        }
         this.saveDraft();
         this.askQuestions();
       },
@@ -517,24 +625,18 @@
       },
       summaryRows() { return this.visibleSections().filter(s => this.optionLabel(s, this.answers[s.id])); },
       rowLabel(s) { return ROW_LABELS[s.id] || s.title; },
-      rowText(s) {
+      rowText(s) {  // a design adds its "for dark/light garments" note: the two variants share a name
         const v = this.answers[s.id];
         if (s.kind === 'colour' && v && typeof v === 'object') return v.name + ' \u00b7 ' + String(v.hex).toUpperCase();
-        return capital(this.optionLabel(s, v));
+        const t = capital(this.optionLabel(s, v));
+        const o = t && this.view(s) === 'design' ? s.options.find(x => x.id === String(v)) : null;
+        return o && o.sub ? t + ' \u00b7 ' + o.sub : t;
       },
       missingSections() { return this.sections.filter(s => s.visible && this.missing.includes(s.id)); },
-      editSection(id) {  // scroll to a section and put the keyboard on its choice
-        const h = document.getElementById('sec-' + id);
-        const sec = h && h.closest('section');
-        if (!sec) return;
-        sec.scrollIntoView({ behavior: reducedMotion() ? 'auto' : 'smooth', block: 'start' });
-        let target = null;
-        if (id === 'colour' && this.builder.custom.open) {
-          target = sec.querySelector(this.builder.custom.name ? '#custom-colour .hex' : '#custom-colour input');
-        }
-        target = target || sec.querySelector('[aria-pressed="true"]:not(:disabled)')
-          || sec.querySelector('input:not(:disabled), .row button:not(:disabled), .seg button:not(:disabled)');
-        if (target) target.focus({ preventScroll: true });
+      editSection(id) {  // open a section (folded or not), scroll to it and put the keyboard on its choice
+        if (!sectionEl(id)) return;
+        this.touch(id);
+        window.Alpine.nextTick(() => this.focusChoice(id, 'start'));
       },
       costText() { return this.preview ? money(this.preview.base_usd) : ''; },
       worstText() { return this.preview ? 'up to ' + money(this.preview.worst_usd) + ' if every allowed fix runs' : ''; },

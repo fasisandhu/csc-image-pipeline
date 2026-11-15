@@ -300,3 +300,29 @@ Each line has its test in the owning task.
 - Client logo upload: its own plan.
 - Ideas from coverage and "make it in more colours": a later plan.
 - Clients tab and teammate access.
+
+### Task 7b: Ask only what's missing (owner request, 2026-11-15)
+
+**Files:**
+- Modify `studio/static/app.js`, `index.html` and `styles.css`.
+- Test: the browser walkthrough (no server change).
+
+**Behaviour:**
+- **Answered sections fold away.** Once a visible section has an answer, it collapses to one line, e.g. "Colour: Olive · Change", whether the answer came from the person or from "Fill from my words".
+- **Only the gaps stay open.** Unanswered required sections stay open. After a brief, the page scrolls to and focuses the first unanswered section. When nothing is missing, it scrolls to the summary.
+- **The section in use stays open.** The section the person is using stays open until they act in another section or press "Done", so it never jumps away mid-choice.
+- **Reopening:**
+  - "Change" re-opens one section.
+  - "Show all options" / "Show only what's left" toggles everything.
+  - Folded rows keep their "?" tip available.
+- **Unchanged:** not-applicable sections stay hidden as now; "NEW" badges still show on sections that just appeared.
+- **Accessibility:** collapse and expand are buttons with `aria-expanded`, and focus moves sensibly.
+
+- [ ] **Step 1:** Implement.
+- [ ] **Step 2:** Browser walkthrough:
+  - "olive oversized hoodie with something on the back" leaves only the unanswered sections open;
+  - Change re-opens a section;
+  - Show all works;
+  - keyboard only.
+- [ ] **Step 3:** Run the full suite. Expect all tests to pass.
+- [ ] **Step 4:** Commit: `feat: builder asks only what is still missing`.

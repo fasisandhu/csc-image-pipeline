@@ -205,6 +205,12 @@ def stray_text_check(image: str | Path, allowed: list[str]) -> dict:
             "found": found, "stray": stray}
 
 
+def regenerations_used(shot_id: str | None) -> int:
+    """New images already made for a shot: its logged finals after the first, however they were made."""
+    finals = [e for e in ledger.entries() if e.get("status") == "ok" and e.get("shot_id") == shot_id and e.get("phase") == "final"]
+    return max(0, len(finals) - 1)
+
+
 def next_action(entry: dict, codes: list[str]) -> tuple[str, str | None]:
     """(action, code): approve | finish | repair | composite | regenerate | flag, following the CLAUDE.md limits."""
     rules = load_json("brand/repairs.json")
@@ -212,13 +218,11 @@ def next_action(entry: dict, codes: list[str]) -> tuple[str, str | None]:
     if not codes:
         return "approve", None
     fixes = {c: rules["codes"].get(c, {"fix": "regenerate"})["fix"] for c in codes}
-    shot = entry.get("shot_id")
     root = entry.get("root") or entry.get("file")
-    finals = [e for e in ledger.entries() if e.get("status") == "ok" and e.get("shot_id") == shot and e.get("phase") == "final"]
     repairs = [e for e in ledger.entries() if e.get("status") == "ok" and e.get("phase") == "repair" and e.get("root") == root]
 
     def regenerate_or_flag() -> tuple[str, str | None]:
-        regens = max(0, len(finals) - 1)
+        regens = regenerations_used(entry.get("shot_id"))
         return ("regenerate", None) if regens < limits["regenerations_per_shot"] else ("flag", None)
 
     if any(f == "regenerate" for f in fixes.values()):

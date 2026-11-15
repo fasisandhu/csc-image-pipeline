@@ -4,7 +4,9 @@ Fake runner, fake checks and an in-memory ledger: no paid calls. run_checks and 
 so the limits are counted from the ledger exactly as the CLI counts them. Specs are the tracked ones in specs/.
 """
 import json
+import sqlite3
 import sys
+import threading
 import uuid
 from contextlib import closing
 from pathlib import Path
@@ -58,8 +60,8 @@ def env(monkeypatch, tmp_path):
         monkeypatch.setenv(k, "test")
     rows: list[dict] = []
 
-    def record(e):
-        rows.append({"ts": stamp(), **e})
+    def record(e):  # as ledger.record: the step's tags (this thread's context) go into every entry
+        rows.append({"ts": stamp(), **ledger.tags(), **e})
         return rows[-1]
     monkeypatch.setattr(ledger, "entries", lambda: rows)
     monkeypatch.setattr(ledger, "record", record)
@@ -218,7 +220,8 @@ def test_repair_then_pass(env, monkeypatch):
     assert check1["result"]["next"] == "repair" and check1["result"]["next_code"] == "drawcord_shape"
     moved = f"out/reject/{Path(final).name}"
     assert check1["output"] == moved and env.moves == [Path(final).name]
-    assert env.rows[-1] == {"ts": env.rows[-1]["ts"], "event": "moved", "file": final, "moved_to": moved}
+    assert env.rows[-1] == {"ts": env.rows[-1]["ts"], "event": "moved", "file": final, "moved_to": moved,
+                            "review_step": check1["id"], "job_id": jid}  # the CLI's event, tagged with its step
     assert job(jid)["review"] == "fixing" and kinds(jid)[1] == ("repair", "queued")
     assert steps(jid)[1]["input"] == moved and steps(jid)[1]["code"] == "drawcord_shape"
 
@@ -372,7 +375,8 @@ def test_logo_second_failure_composites_onto_anchor_source(env):
     assert env.composites == [{"image": Path(anchor_final).name, "artwork": "brand/designs/oakmere-athletic.svg",
                                "placement": "centre chest", "size_cm": 22, "preset": "3d_puff"}]
     out = next(r for r in env.rows if r.get("file") == comp["output"])
-    assert out["shot_id"] == LOGO_SID and out["op"] == "composite" and out["root"] == anchor_final
+    assert out["shot_id"] == LOGO_SID and out["op"] == "composite" and out["source"] == anchor_final
+    assert out["root"] == comp["output"]  # its own render: never counted against the anchor's limits
     assert (ROOT / comp["output"]).is_file() and comp["output"].startswith("out/finals/")
     assert steps(jid)[4]["input"] == comp["output"]
     assert len(env.moves) == 2 and job(jid)["review"] == "ready"
@@ -581,3 +585,191 @@ def make_file(env, name: str) -> str:
     path.write_bytes(b"\xff\xd8\xff\xd9")
     env.made.append(path)
     return path.relative_to(ROOT).as_posix()
+
+
+# --- fix round 1 ----------------------------------------------------------------------------
+
+def approved_anchor(env, moved: bool = False) -> str:
+    """A washed-black 450 packshot render with an anchor_approved event; optionally moved to out/reject since."""
+    anchor_final = make_file(env, "anchor")
+    env.rows.append({"ts": stamp(), "status": "ok", "shot_id": SID, "phase": "final", "tier": "standard",
+                     "provider": "gemini", "file": anchor_final, "cost_usd": 0.101})
+    if moved:  # really moved: the render exists, but in out/reject
+        rejected = ROOT / "out" / "reject" / Path(anchor_final).name
+        rejected.parent.mkdir(parents=True, exist_ok=True)
+        (ROOT / anchor_final).replace(rejected)
+        env.made.append(rejected)
+        env.rows.append({"ts": stamp(), "event": "moved", "file": anchor_final,
+                         "moved_to": f"out/reject/{rejected.name}"})
+    env.rows.append({"ts": stamp(), "event": "anchor_approved", "file": anchor_final,
+                     "anchor": "refs/anchors/pullover-oversized_washed-black_450_front.png", "by": "owner"})
+    return anchor_final
+
+
+def paid_calls(env, shot: str) -> list[dict]:
+    """Paid image calls for one shot (an approved anchor's own final belongs to another shot)."""
+    return [r for r in gemini_rows(env) if r.get("status") == "ok" and r.get("phase") in ("final", "repair")
+            and r.get("shot_id") == shot]
+
+
+def test_composite_with_any_other_fault_needs_person_no_paid_repair(env):
+    """Important 1: a fault on the composite (a non-logo one too) never buys a repair; a person looks."""
+    approved_anchor(env)
+    env.script = [{"logo": LOGO_TEXT}, {"logo": LOGO_TEXT}] + [{"visual": "drawcord_shape"}] * 12
+    jid = make_final(LOGO_SID)
+    drain(Worker(db.connect, runner=env.runner), limit=80)
+    assert [k for k, _ in kinds(jid)] == ["check", "repair", "check", "composite", "check"]
+    assert len(env.repairs) == 1 and len(paid_calls(env, LOGO_SID)) == 2  # the final and its one logo repair
+    j = job(jid)
+    assert j["review"] == "needs_person" and "real logo" in j["review_reason"]
+
+
+@pytest.mark.parametrize("scenario", ["repairs_everywhere", "composite_then_faults", "logo_then_faults"])
+def test_paid_calls_never_exceed_the_worst_case_shown(env, scenario):
+    """At most 1 final + 2 new images, each with at most 2 repairs: 9 x the base cost shown before Approve."""
+    if scenario == "repairs_everywhere":
+        env.script, shot = [{"visual": "drawcord_shape"}] * 40, SID
+    elif scenario == "composite_then_faults":
+        approved_anchor(env)
+        env.script, shot = [{"logo": LOGO_TEXT}] * 2 + [{"visual": "drawcord_shape"}] * 40, LOGO_SID
+    else:
+        env.script, shot = [{"logo": LOGO_TEXT}] + [{"visual": "drawcord_shape"}] * 40, LOGO_SID
+    jid = make_final(shot)
+    drain(Worker(db.connect, runner=env.runner), limit=80)
+    assert len(paid_calls(env, shot)) <= 9
+    assert job(jid)["review"] == "needs_person"
+    if scenario == "repairs_everywhere":
+        assert len(paid_calls(env, shot)) == 9  # the worst case is reachable, and nothing beyond it
+
+
+def test_composite_never_spends_the_anchors_allowance(env):
+    """The composite is its own render: correcting its colour counts against it, not against the anchor."""
+    anchor_final = approved_anchor(env)
+    env.script = [{"logo": LOGO_TEXT}, {"logo": LOGO_TEXT}, {"colour": COLOUR_DRIFT}]
+    jid = make_final(LOGO_SID)
+    drain(Worker(db.connect, runner=env.runner))
+    assert [k for k, _ in kinds(jid)] == ["check", "repair", "check", "composite", "check", "finish", "check"]
+    comp = steps(jid)[3]["output"]
+    cc = next(r for r in env.rows if r.get("op") == "colour_correct")
+    assert cc["root"] == comp
+    assert not [r for r in env.rows if r.get("root") == anchor_final]
+    assert job(jid)["review"] == "ready"
+
+
+def test_regenerate_rechecks_the_shot_limit_when_it_runs(env):
+    """Important 2: another final of the shot that lands between a check and its new image counts at spend time."""
+    env.script = [{"visual": "framing"}, {"visual": "framing"}]
+    a, b = make_final(), make_final()  # one shot: both finals run before either check
+    drain(Worker(db.connect, runner=env.runner), limit=80)
+    finals = [r for r in env.rows if r.get("phase") == "final" and r.get("shot_id") == SID]
+    assert len(finals) == 3  # 1 final + 2 new images at most; the third regeneration never ran
+    stopped = next(j for j in (a, b) if job(j)["review"] == "needs_person")
+    regen = steps(stopped)[-1]
+    assert regen["kind"] == "regenerate" and regen["status"] == "failed" and regen["cost_usd"] == 0.0
+    assert job(stopped)["review_reason"] == worker_mod.LIMITS_USED
+
+
+def test_step_cost_is_the_steps_own_calls(env):
+    """M1: calls logged in the step carry its tag; a call logged meanwhile by another thread is not its cost."""
+    class Costly(FakeBrain):
+        def ask_json(self, *a, **k):
+            ledger.record({"event": "brain", "provider": "claude", "user": "owner", "cost_usd": 0.02})
+            other = threading.Thread(target=lambda: ledger.record(
+                {"event": "brain", "provider": "claude", "user": "teammate", "cost_usd": 0.5}))
+            other.start()
+            other.join()
+            return super().ask_json(*a, **k)
+    env.brain = Costly(env)
+    jid = make_final()
+    drain(Worker(db.connect, runner=env.runner))
+    (check,) = steps(jid)
+    assert check["cost_usd"] == 0.02
+    mine = next(r for r in env.rows if r.get("user") == "owner" and r.get("event") == "brain")
+    theirs = next(r for r in env.rows if r.get("user") == "teammate")
+    assert (mine["review_step"], mine["job_id"]) == (check["id"], jid) and "review_step" not in theirs
+
+
+def test_ledger_tags_follow_the_thread(monkeypatch, tmp_path):
+    monkeypatch.setattr(ledger, "LOG", tmp_path / "log.jsonl")
+    with ledger.tagged(review_step=7, job_id=3):
+        ledger.record({"event": "a", "cost_usd": 0.1})
+        other = threading.Thread(target=lambda: ledger.record({"event": "b"}))
+        other.start()
+        other.join()
+    ledger.record({"event": "c"})
+    a, b, c = ledger.entries()
+    assert (a["review_step"], a["job_id"]) == (7, 3) and "review_step" not in b and "review_step" not in c
+
+
+def test_done_final_and_its_check_are_one_transaction(env):
+    """M2: a final is never done without its check queued and its review set."""
+    jid = make_final()
+    with closing(db.connect()) as conn:
+        with pytest.raises(sqlite3.IntegrityError):
+            db.complete_final(conn, jid, {"files": [], "cost_usd": 0.1}, None)  # the step insert fails
+        j = db.get_job(conn, jid)
+        assert j["status"] == "queued" and j["review"] is None and db.steps_for(conn, jid) == []
+        db.complete_final(conn, jid, {"files": ["out/finals/a.jpg"], "cost_usd": 0.1}, "out/finals/a.jpg")
+        j = db.get_job(conn, jid)
+        assert (j["status"], j["review"]) == ("done", "checking")
+        assert [(s["kind"], s["status"], s["input"]) for s in db.steps_for(conn, jid)] == [
+            ("check", "queued", "out/finals/a.jpg")]
+
+
+def test_restart_flags_finals_that_were_never_checked(env):
+    """M2: a done final with no review and no steps (a crash, or a final from before the chain) needs a person."""
+    legacy, checked, drafts = make_final(), make_final(), make_final()
+    with closing(db.connect()) as conn:
+        for j in (legacy, drafts):
+            db.set_status(conn, j, "done")
+        with conn:
+            conn.execute("UPDATE jobs SET kind = 'drafts' WHERE id = ?", (drafts,))
+        db.complete_final(conn, checked, {"files": ["out/finals/a.jpg"], "cost_usd": 0.1}, "out/finals/a.jpg")
+        assert db.mark_interrupted(conn) == 0
+        assert db.get_job(conn, legacy)["review"] == "needs_person" and db.get_job(conn, legacy)["review_reason"]
+        assert db.get_job(conn, checked)["review"] == "checking"
+        assert db.get_job(conn, drafts)["review"] is None
+
+
+def test_check_decides_before_it_moves(env, monkeypatch):
+    """M3: if deciding the next step fails, the render has not been moved and the step simply fails."""
+    def broken(spec):
+        raise RuntimeError("ledger unreadable")
+    monkeypatch.setattr(worker_mod, "anchor_source", broken)
+    approved_anchor(env)
+    env.script = [{"logo": LOGO_TEXT}, {"logo": LOGO_TEXT}]
+    jid = make_final(LOGO_SID)
+    drain(Worker(db.connect, runner=env.runner))
+    assert kinds(jid) == [("check", "done"), ("repair", "done"), ("check", "failed")]
+    repaired = steps(jid)[1]["output"]
+    assert Path(repaired).name not in env.moves and len(env.moves) == 1  # only the final, judged earlier
+    assert job(jid)["review"] == "needs_person" and "ledger unreadable" in job(jid)["review_reason"]
+
+
+def test_composite_source_only_from_finals(env):
+    """M4: an approved anchor render that has since gone to out/reject is no source."""
+    approved_anchor(env, moved=True)
+    env.script = [{"logo": LOGO_TEXT}, {"logo": LOGO_TEXT}]
+    jid = make_final(LOGO_SID)
+    drain(Worker(db.connect, runner=env.runner))
+    assert env.composites == [] and job(jid)["review_reason"] == worker_mod.NO_SOURCE
+
+
+@pytest.mark.parametrize("change", ["full back", "close-up camera", "on model"])
+def test_composite_only_onto_a_front_packshot(env, change):
+    """M5: the front packshot only takes a front chest logo on a front packshot shot; anything else needs a person."""
+    approved_anchor(env)
+    spec = json.loads((ROOT / "specs" / f"{LOGO_SID}.json").read_text(encoding="utf-8"))
+    shot = spec["shot"]
+    if change == "full back":
+        shot["decoration"][0]["placement"] = "full back"
+    elif change == "close-up camera":
+        shot["camera"]["angle"] = "straight on, slightly above the decoration"
+    else:
+        shot["model"] = {"present": True, "cast": "Maya", "pose": "standing relaxed"}
+    with closing(db.connect()) as conn:
+        jid = db.create_job(conn, "owner", "final", {}, spec, {"base_usd": 0.1})
+    env.script = [{"logo": LOGO_TEXT}, {"logo": LOGO_TEXT}]
+    drain(Worker(db.connect, runner=env.runner))
+    assert steps(jid)[-1]["result"]["next"] == "composite" and env.composites == []
+    assert job(jid)["review"] == "needs_person" and job(jid)["review_reason"] == worker_mod.NO_SOURCE

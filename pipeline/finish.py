@@ -34,17 +34,20 @@ def _spec_for(image: Path) -> tuple[dict, dict]:
     return entry, json.loads(spec_path(entry["shot_id"]).read_text(encoding="utf-8"))
 
 
-def _derived(image: Path, suffix: str, rgb: np.ndarray, entry: dict, op: str, extra: dict) -> Path:
-    """Save a finished variant next to its source and log it as a free generation-like entry."""
+def _derived(image: Path, suffix: str, rgb: np.ndarray, entry: dict, op: str, extra: dict,
+             own_root: bool = False) -> Path:
+    """Save a finished variant next to its source and log it as a free generation-like entry.
+    own_root: the variant is a render of its own (a studio logo composite), so the repair and colour-correction
+    limits count against it, never against its source's root."""
     out = image.with_name(f"{image.stem}_{suffix}.jpg")
     Image.fromarray(rgb.astype(np.uint8)).save(out, quality=95)
     src_mask = MASK_CACHE / f"{image.stem}.png"
     if src_mask.exists():  # geometry is unchanged, so the mask carries over
         shutil.copy(src_mask, MASK_CACHE / f"{out.stem}.png")
     keep = {k: entry[k] for k in ("shot_id", "tier", "requested_tier", "model", "size", "aspect", "prompt", "refs") if k in entry}
+    root = rel(out) if own_root else entry.get("root") or entry.get("file")
     ledger.record({**keep, "provider": "local", "phase": "finish", "op": op, "status": "ok",
-                   "file": rel(out), "source": rel(image), "root": entry.get("root") or entry.get("file"),
-                   "cost_usd": 0.0, **extra})
+                   "file": rel(out), "source": rel(image), "root": root, "cost_usd": 0.0, **extra})
     return out
 
 

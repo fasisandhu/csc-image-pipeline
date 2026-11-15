@@ -1,8 +1,10 @@
 """Cost log (out/log.jsonl) and hard budget guards. Every provider call goes through here."""
 from __future__ import annotations
 
+import contextvars
 import json
 import threading
+from contextlib import contextmanager
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -14,6 +16,9 @@ GEMINI_SPLIT_USD = {"standard": 4.00, "premium": 6.00}  # soft split, used by th
 CF_DAILY_NEURON_CAP = 9500
 RUN_APPROVAL_USD = 1.00  # any run estimated above this needs explicit approval
 _LOCK = threading.Lock()  # the studio worker and request threads append at the same time
+# Tags merged into every entry recorded in this context, e.g. the studio review step a call belongs to.
+# A context is per thread: a new thread starts without tags, so another thread's calls never carry them.
+_TAGS: contextvars.ContextVar[dict] = contextvars.ContextVar("ledger_tags", default={})
 
 
 class BudgetError(RuntimeError):
@@ -35,8 +40,23 @@ def entries() -> list[dict]:
         return [json.loads(line) for line in f if line.strip()]
 
 
+def tags() -> dict:
+    """The tags this context adds to every entry it records (see `tagged`)."""
+    return dict(_TAGS.get())
+
+
+@contextmanager
+def tagged(**extra):
+    """Add these keys to every entry recorded in this context (this thread, and coroutines it starts)."""
+    token = _TAGS.set({**_TAGS.get(), **extra})
+    try:
+        yield
+    finally:
+        _TAGS.reset(token)
+
+
 def record(entry: dict) -> dict:
-    entry = {"ts": now().isoformat(timespec="seconds"), **entry}
+    entry = {"ts": now().isoformat(timespec="seconds"), **tags(), **entry}
     line = json.dumps(entry, ensure_ascii=False) + "\n"
     with _LOCK:
         LOG.parent.mkdir(parents=True, exist_ok=True)

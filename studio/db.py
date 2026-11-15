@@ -46,6 +46,7 @@ REVIEW_STATES = ("checking", "fixing", "ready", "needs_person", "approved", "rej
 VERDICTS = ("approved", "rejected", "anchor")  # a person's decision: the automatic chain never changes it
 REVIEW_SETTABLE = {"reason"}
 INTERRUPTED = "The server stopped during an automatic check or fix; please look."
+NOT_CHECKED = "The automatic checks did not run on this image; please look."
 STEPS_SCHEMA = """
 CREATE TABLE IF NOT EXISTS review_steps (
     id INTEGER PRIMARY KEY,
@@ -71,7 +72,7 @@ def connect(path: Path | None = None) -> sqlite3.Connection:
     with conn:
         conn.execute(SCHEMA)
         conn.execute(STEPS_SCHEMA)
-        have ={r["name"] for r in conn.execute("PRAGMA table_info(jobs)")}
+        have = {r["name"] for r in conn.execute("PRAGMA table_info(jobs)")}
         for col, typ in ADDED_COLUMNS.items():
             if col in have:
                 continue
@@ -149,7 +150,8 @@ def set_status(conn, job_id: int, status: str, **fields) -> None:
 
 def mark_interrupted(conn) -> int:
     """At start-up nothing a stopped server left running is re-run: a job becomes interrupted, a review step
-    fails, and a review left checking or fixing with no step queued needs a person.
+    fails, and a review left checking or fixing with no step queued needs a person. So does a done final that
+    was never checked (no review, no steps): one from before the review chain.
     Returns how many jobs and steps were running."""
     t = _now()
     with conn:
@@ -160,7 +162,23 @@ def mark_interrupted(conn) -> int:
         conn.execute("UPDATE jobs SET review = 'needs_person', review_reason = ?, updated = ?"
                      " WHERE review IN ('checking', 'fixing') AND NOT EXISTS (SELECT 1 FROM review_steps s"
                      " WHERE s.job_id = jobs.id AND s.status = 'queued')", (INTERRUPTED, t))
+        conn.execute("UPDATE jobs SET review = 'needs_person', review_reason = ?, updated = ?"
+                     " WHERE kind = 'final' AND status = 'done' AND review IS NULL AND NOT EXISTS"
+                     " (SELECT 1 FROM review_steps s WHERE s.job_id = jobs.id)", (NOT_CHECKED, t))
     return jobs + steps
+
+
+def complete_final(conn, job_id: int, result: dict, check_input: str) -> None:
+    """A final job done, the check of its file queued and its review "checking", in one transaction: a crash
+    never leaves a done final with no check and no review."""
+    t = _now()
+    with conn:
+        conn.execute("UPDATE jobs SET status = 'done', result = ?, updated = ? WHERE id = ?",
+                     (json.dumps(result), t, job_id))
+        conn.execute("INSERT INTO review_steps (job_id, kind, status, input, created, updated)"
+                     " VALUES (?, 'check', 'queued', ?, ?, ?)", (job_id, check_input, t, t))
+        conn.execute("UPDATE jobs SET review = 'checking', review_reason = NULL WHERE id = ?"
+                     " AND (review IS NULL OR review IN ('checking', 'fixing', 'ready', 'needs_person'))", (job_id,))
 
 
 # --- review steps ------------------------------------------------------------------------------

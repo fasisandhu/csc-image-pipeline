@@ -354,7 +354,7 @@ def test_static_app_js_served_as_javascript(client):
 
 def test_vendor_versions_are_exact_pins_with_files(client):
     import re
-    lines = [ln for ln in (STATIC / "vendor" / "VERSIONS.txt").read_text().splitlines() if ln.strip()]
+    lines = [ln for ln in (STATIC / "vendor" / "VERSIONS.txt").read_text(encoding="utf-8").splitlines() if ln.strip()]
     assert lines and all(re.fullmatch(r"[a-z0-9.-]+==\d+\.\d+\.\d+", ln) for ln in lines)
     for ln in lines:
         name, version = ln.split("==")
@@ -369,4 +369,18 @@ def test_index_loads_only_local_assets(client):
     assert refs
     assert all(r.startswith(("/static/", "#")) for r in refs), refs
     assert "http" not in html.lower().replace("http-equiv", "")
-    assert not re.search(r"\b(alert|confirm|prompt)\(", (STATIC / "app.js").read_text())
+    assert not re.search(r"\b(alert|confirm|prompt)\(", (STATIC / "app.js").read_text(encoding="utf-8"))
+
+
+# --- builder sections (task 5) ---------------------------------------------------------------
+def test_every_section_has_a_tip(client):
+    for answers in ({}, {"catalogue": "pullover-oversized", "colour": "olive", "gsm": 380,
+                         "recipe": "on-model-back", "decoration": "design"}):
+        r = client.post("/api/questions", json={"answers": answers})
+        assert r.status_code == 200
+        sections = r.json()["sections"]
+        assert sections and all(isinstance(s.get("tip"), str) and s["tip"].strip() for s in sections), \
+            [s["id"] for s in sections if not (s.get("tip") or "").strip()]
+    every = [s["id"] for s in json.loads((ROOT / "studio" / "questions" / "images.json").read_text(
+        encoding="utf-8"))["sections"]]
+    assert [s["id"] for s in sections] == every  # every section in the file, visible or not, carries one

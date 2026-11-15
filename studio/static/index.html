@@ -10,6 +10,13 @@
 <script defer src="/static/vendor/alpinejs-3.14.1.min.js"></script>
 </head>
 <body>
+<svg width="0" height="0" class="defs" aria-hidden="true" focusable="false">
+  <defs>
+    <symbol id="h-over" viewBox="0 0 100 100"><path d="M36 20 Q50 2 64 20 L86 27 Q93 30 95 40 L98 78 L84 80 L80 52 L80 95 L20 95 L20 52 L16 80 L2 78 L5 40 Q7 30 14 27 Z"/><path d="M40 21 Q50 30 60 21" fill="none" stroke="rgba(255,255,255,.35)" stroke-width="1.5"/><rect x="33" y="64" width="34" height="18" rx="3" fill="none" stroke="rgba(255,255,255,.3)" stroke-width="1.5"/><path d="M46 24 L45 44 M54 24 L55 44" stroke="rgba(255,255,255,.55)" stroke-width="1.6"/></symbol>
+    <symbol id="h-classic" viewBox="0 0 100 100"><path d="M38 20 Q50 3 62 20 L78 26 Q84 29 86 38 L92 80 L80 82 L74 50 L75 95 L25 95 L26 50 L20 82 L8 80 L14 38 Q16 29 22 26 Z"/><path d="M41 21 Q50 29 59 21" fill="none" stroke="rgba(255,255,255,.35)" stroke-width="1.5"/><rect x="35" y="64" width="30" height="17" rx="3" fill="none" stroke="rgba(255,255,255,.3)" stroke-width="1.5"/><path d="M46 24 L45 43 M54 24 L55 43" stroke="rgba(255,255,255,.55)" stroke-width="1.6"/></symbol>
+    <symbol id="h-zip" viewBox="0 0 100 100"><path d="M38 20 Q50 3 62 20 L78 26 Q84 29 86 38 L92 80 L80 82 L74 50 L75 95 L25 95 L26 50 L20 82 L8 80 L14 38 Q16 29 22 26 Z"/><path d="M50 22 L50 95" stroke="rgba(255,255,255,.7)" stroke-width="1.8"/><path d="M30 66 L42 66 M58 66 L70 66" stroke="rgba(255,255,255,.3)" stroke-width="1.5"/></symbol>
+  </defs>
+</svg>
 <div class="ui" x-data x-cloak>
   <header class="top">
     <div class="logo">CSC <b>Studio</b></div>
@@ -41,14 +48,136 @@
 
   <main class="wrap">
     <div id="builder">
-      <div class="sec"><h4>Builder</h4>
-        <div class="hint">Builder sections appear here.</div></div>
+      <div class="sec-note err" x-show="$store.studio.builder.error" role="status">
+        <span x-text="$store.studio.builder.error"></span>
+        <button type="button" class="btn retry" @click="$store.studio.loadQuestions()">Try again</button></div>
+      <p class="sec-note" x-show="!$store.studio.builder.loaded && !$store.studio.builder.error">Loading the options ...</p>
+      <p class="sr-only" aria-live="polite" x-text="$store.studio.builder.announce"></p>
+
+      <template x-for="s in $store.studio.visibleSections()" :key="s.id">
+        <section class="sec" :class="{newsec: $store.studio.isFresh(s)}" :aria-labelledby="'sec-' + s.id">
+          <div class="sec-head">
+            <h4 :id="'sec-' + s.id"><span x-text="s.title"></span><span class="badge" x-show="$store.studio.isFresh(s)"
+                x-text="$store.studio.newBadge(s)"></span></h4>
+            <button type="button" class="tip-btn" x-show="s.tip" @click="$store.studio.toggleTip(s)"
+                    :aria-expanded="String($store.studio.tipOpen(s))" :aria-controls="'tip-' + s.id"
+                    :aria-label="$store.studio.tipLabel(s)">?</button>
+          </div>
+          <div class="hint" x-text="s.hint"></div>
+          <p class="tip" :id="'tip-' + s.id" x-show="$store.studio.tipOpen(s)" x-text="s.tip"></p>
+
+          <!-- style: tiles with the hoodie drawing in the chosen colour -->
+          <template x-if="$store.studio.view(s) === 'style'">
+            <div class="row" role="group" :aria-labelledby="'sec-' + s.id">
+              <template x-for="o in s.options" :key="o.id">
+                <button type="button" class="tile" :disabled="o.disabled"
+                        :aria-pressed="String($store.studio.isOn(s, o))" @click="$store.studio.pick(s, o)">
+                  <svg viewBox="0 0 100 100" aria-hidden="true" focusable="false" :fill="$store.studio.colourHex()"><use x-bind="$store.studio.hoodie(o.id)"></use></svg>
+                  <span x-text="o.label"></span>
+                  <small x-show="$store.studio.subLine(s, o)" :class="{why: o.disabled}" x-text="$store.studio.subLine(s, o)"></small>
+                </button>
+              </template>
+            </div>
+          </template>
+
+          <!-- cast: cards with initials -->
+          <template x-if="$store.studio.view(s) === 'cast'">
+            <div class="row" role="group" :aria-labelledby="'sec-' + s.id">
+              <template x-for="o in s.options" :key="o.id">
+                <button type="button" class="tile wide" :disabled="o.disabled"
+                        :aria-pressed="String($store.studio.isOn(s, o))" @click="$store.studio.pick(s, o)">
+                  <span class="av big" aria-hidden="true" x-text="o.label.charAt(0)"></span>
+                  <span x-text="o.label"></span>
+                  <small x-show="$store.studio.subLine(s, o)" :class="{why: o.disabled}" x-text="$store.studio.subLine(s, o)"></small>
+                </button>
+              </template>
+            </div>
+          </template>
+
+          <!-- design: tiles with the invented brand name -->
+          <template x-if="$store.studio.view(s) === 'design'">
+            <div class="row" role="group" :aria-labelledby="'sec-' + s.id">
+              <template x-for="o in s.options" :key="o.id">
+                <button type="button" class="tile wide design" :disabled="o.disabled"
+                        :aria-pressed="String($store.studio.isOn(s, o))" @click="$store.studio.pick(s, o)">
+                  <b class="brand" x-text="o.label"></b>
+                  <small x-show="$store.studio.subLine(s, o)" :class="{why: o.disabled}" x-text="$store.studio.subLine(s, o)"></small>
+                </button>
+              </template>
+            </div>
+          </template>
+
+          <!-- colour: named swatches plus a custom name and hex -->
+          <template x-if="$store.studio.view(s) === 'colour'">
+            <div>
+              <div class="row swatches" role="group" :aria-labelledby="'sec-' + s.id">
+                <template x-for="o in s.options" :key="o.id">
+                  <button type="button" class="sw" :disabled="o.disabled"
+                          :aria-pressed="String($store.studio.isOn(s, o))" @click="$store.studio.pick(s, o)">
+                    <i aria-hidden="true" :style="'background:' + $store.studio.swatch(o)"></i>
+                    <span x-text="o.label"></span>
+                    <small class="why" x-show="o.disabled" x-text="o.reason"></small>
+                  </button>
+                </template>
+                <button type="button" class="sw" aria-controls="custom-colour"
+                        :aria-pressed="String($store.studio.builder.custom.open)" @click="$store.studio.openCustom()">
+                  <i aria-hidden="true" class="rainbow"></i><span>Custom</span>
+                </button>
+              </div>
+              <div class="custom" id="custom-colour" x-show="$store.studio.builder.custom.open">
+                <label>Colour name
+                  <input type="text" maxlength="40" autocomplete="off" placeholder="e.g. Teal"
+                         :value="$store.studio.builder.custom.name"
+                         @input="$store.studio.setCustom('name', $event.target.value)"></label>
+                <label>Hex code
+                  <input type="text" maxlength="7" autocomplete="off" spellcheck="false" placeholder="#1F6F78"
+                         class="hex" :value="$store.studio.builder.custom.hex"
+                         @input="$store.studio.setCustom('hex', $event.target.value.trim())"></label>
+                <i class="live" aria-hidden="true" :style="'background:' + $store.studio.customSwatch()"></i>
+                <p class="why" role="status" x-text="$store.studio.customTouched() ? $store.studio.customProblem() : ''"></p>
+              </div>
+            </div>
+          </template>
+
+          <!-- size: a slider from 1 to the placement's maximum -->
+          <template x-if="$store.studio.view(s) === 'size'">
+            <div>
+              <div x-show="s.max">
+                <div class="size-line">Size <b x-text="$store.studio.sizeText()"></b>
+                  <span class="small" :id="'lim-' + s.id" x-text="s.max ? $store.studio.sizeLimit(s) : ''"></span></div>
+                <input type="range" class="range" min="1" step="1" :max="s.max || 1" :value="$store.studio.sizeValue(s)"
+                       :aria-labelledby="'sec-' + s.id" :aria-describedby="'lim-' + s.id"
+                       :aria-valuetext="$store.studio.sizeText()"
+                       @input="$store.studio.setSize($event.target.value)"
+                       @click="$store.studio.setSize($event.target.value)"
+                       @keyup="$store.studio.sizeKey($event)">
+                <div class="small" x-show="$store.studio.answers.size_cm === undefined">Drag or click the slider to set the size.</div>
+              </div>
+              <p class="small why" x-show="!s.max">This placement has no maximum size set yet, so a size can't be chosen.</p>
+            </div>
+          </template>
+
+          <!-- everything else: segmented buttons -->
+          <template x-if="$store.studio.view(s) === 'seg'">
+            <div class="seg" role="group" :aria-labelledby="'sec-' + s.id">
+              <template x-for="o in s.options" :key="o.id">
+                <button type="button" :disabled="o.disabled"
+                        :aria-pressed="String($store.studio.isOn(s, o))" @click="$store.studio.pick(s, o)">
+                  <span class="lab" x-text="o.label"></span>
+                  <small x-show="$store.studio.subLine(s, o)" :class="{why: o.disabled}" x-text="$store.studio.subLine(s, o)"></small>
+                </button>
+              </template>
+            </div>
+          </template>
+        </section>
+      </template>
     </div>
     <div class="sum">
       <div class="card">
         <div class="prev"><span class="small">Sketch preview appears here</span></div>
         <b>Your image</b>
         <p class="small">Summary and cost appear here.</p>
+        <p class="small why" x-show="$store.studio.builder.previewError" x-text="$store.studio.builder.previewError" role="status"></p>
       </div>
       <div class="card jobs-card">
         <b>Your jobs</b>

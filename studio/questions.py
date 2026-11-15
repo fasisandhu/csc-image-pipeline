@@ -41,6 +41,7 @@ class Section:
     visible: bool = True
     required: bool = True
     max: float | None = None
+    tip: str = ""  # plain-language help behind the section's "?"
 
 
 def _catalogues() -> dict[str, dict]:
@@ -169,7 +170,8 @@ def resolve(answers: dict, name: str = "images") -> list[Section]:
     out = []
     for sec in spec["sections"]:
         s = Section(sec["id"], sec["title"], sec["hint"], sec["kind"], _options(sec, answers, cats, recipes),
-                    answers.get(sec["id"]), _visible(sec, answers, recipes), sec.get("required", True))
+                    answers.get(sec["id"]), _visible(sec, answers, recipes), sec.get("required", True),
+                    tip=sec.get("tip", ""))
         if sec["kind"] == "size":
             s.max = _size_max(answers, cats)
         out.append(s)

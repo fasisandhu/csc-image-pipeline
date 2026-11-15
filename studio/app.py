@@ -28,6 +28,7 @@ from pipeline.specs import build_spec, find_anchor, load_recipes
 from . import db, guide
 from .brain import BrainError, get_brain
 from .identity import current_user
+from .notes import plain_warnings
 from .questions import missing, resolve, valid_value
 from .tasks import read_brief
 from .worker import routes_for
@@ -43,6 +44,7 @@ NO_SKETCH = "Reference packshots are made without a sketch, so the garment comes
 BRAIN_BUSY = "Our AI helpers are busy right now; pick the options below."
 SERVICE_DOWN = "The image service is not available right now; try again in a moment."
 FOLDERS = re.compile(r"(?:[\w.:~-]*[/\\])+(?=[\w.~-])")  # the folder part of a path, "/" or "\"
+SETTING_NAMES = re.compile(r"\b(?=STUDIO_|[A-Z0-9_]*(?:KEY|TOKEN|SECRET))[A-Z][A-Z0-9_]{2,}\b")
 log = logging.getLogger(__name__)
 
 app = FastAPI(title="CSC Studio", dependencies=[Depends(current_user)])
@@ -151,6 +153,11 @@ def file_names_only(text: str) -> str:
     return FOLDERS.sub("", text)
 
 
+def public_text(text: str) -> str:
+    """file_names_only, and a setting's name (STUDIO_*, or one with KEY, TOKEN or SECRET) becomes "a setting"."""
+    return SETTING_NAMES.sub("a setting", file_names_only(text))
+
+
 def caption_for(answers: dict) -> str:
     """The caption every displayed image carries (brand.json): the on-model one when the shot has a model."""
     captions = load_json("brand/brand.json")["captions"]
@@ -165,7 +172,7 @@ def public_job(job: dict) -> dict:
     out["shot_id"] = ((job.get("spec") or {}).get("shot") or {}).get("shot_id")
     out["caption"] = caption_for(job.get("answers"))
     if out.get("error"):
-        out["error"] = file_names_only(out["error"])
+        out["error"] = public_text(out["error"])
     return out
 
 
@@ -249,7 +256,7 @@ def preview(body: AnswersIn):
     c = compile_spec(spec)
     est = estimate(spec)
     return {"shot_id": c.shot_id, "prompt": c.prompts["paragraph"],
-            "warnings": [file_names_only(w) for w in c.warnings],
+            "warnings": [public_text(w) for w in plain_warnings(c.warnings)],
             **{k: est[k] for k in ("base_usd", "worst_usd", "action", "reason", "tier")},
             "needs_anchor": needs_anchor(answers), "takes_sketch": takes_sketch(answers)}
 

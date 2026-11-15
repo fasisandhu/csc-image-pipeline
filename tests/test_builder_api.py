@@ -193,7 +193,14 @@ def test_files_refuses_traversal_and_other_dirs(client, out_file):
         assert (r.status_code, r.json()) == (404, NOT_FOUND), p  # one answer: never says what exists
 
 
-def test_final_needs_anchor_409_with_anchor_answers(client):
+@pytest.fixture
+def pinned_anchors(monkeypatch):
+    """Only the washed-black reference packshot exists, whatever refs/anchors holds on this PC."""
+    monkeypatch.setattr(app_mod, "find_anchor", lambda cat, colour, gsm: (
+        "refs/anchors/x.png" if colour == "washed-black" else None))
+
+
+def test_final_needs_anchor_409_with_anchor_answers(client, pinned_anchors):
     for colour in ("olive", {"name": "Teal", "hex": "#1F6F78"}):
         answers = {**OLIVE_ON_MODEL, "colour": colour}
         r = client.post("/api/jobs", json={"answers": answers, "kind": "final", "confirm": True})
@@ -206,7 +213,7 @@ def test_final_needs_anchor_409_with_anchor_answers(client):
     assert client.post("/api/jobs", json={"answers": OLIVE_ON_MODEL, "kind": "drafts"}).status_code == 201
 
 
-def test_packshot_front_final_not_gated(client):
+def test_packshot_front_final_not_gated(client, pinned_anchors):
     anchor = client.post("/api/jobs", json={"answers": OLIVE_ON_MODEL}).json()["anchor_answers"]
     r = client.post("/api/jobs", json={"answers": anchor, "kind": "final"})
     assert r.status_code == 201, r.text
@@ -340,6 +347,24 @@ def test_job_dicts_carry_shot_id_not_repo_paths(client):
     assert listed.json()["jobs"] == [one.json()]
 
 
+def test_job_error_hides_setting_names(client):
+    jid = client.post("/api/jobs", json={"answers": OAKMERE}).json()["id"]
+
+    def no_key(c, r):
+        raise RuntimeError("gemini: GEMINI_API_KEY not set")
+    assert Worker(db.connect, runner=no_key).run_once() is True
+    for body in (client.get(f"/api/jobs/{jid}").json(), client.get("/api/jobs").json()["jobs"][0]):
+        assert body["error"] == "gemini: a setting not set"
+    with closing(db.connect()) as conn:
+        assert "GEMINI_API_KEY" in db.get_job(conn, jid)["error"]  # the DB keeps the original
+
+
+def test_public_text():
+    assert app_mod.public_text("STUDIO_TOKEN and CF_API_TOKEN, MY_SECRET") == "a setting and a setting, a setting"
+    assert app_mod.public_text("GSM 450 and HTML stay") == "GSM 450 and HTML stay"
+    assert app_mod.public_text("see brand/x.png") == "see x.png"
+
+
 def test_job_error_names_files_without_folders(client):
     jid = client.post("/api/jobs", json={"answers": OAKMERE}).json()["id"]
 
@@ -363,11 +388,10 @@ def test_preview_warnings_name_files_without_folders(client, monkeypatch):
     assert r.status_code == 200
     warnings = r.json()["warnings"]
     assert "reference x_ref.png not found (not yet approved?), skipped" in warnings
-    assert "set style_block differs from brand.json" in warnings
+    assert not any("style_block" in w for w in warnings)  # not meant for the page
+    assert len(warnings) == len(set(warnings)) and None not in warnings
     assert "brand/" not in r.text and "refs/" not in r.text
-    # warnings without a path are unchanged
-    assert [w for w in warnings if w.startswith("catalogue ")] == [
-        w for w in real(build_spec(OAKMERE)).warnings if w.startswith("catalogue ")]
+    assert not any(w.startswith("catalogue ") for w in warnings)  # plain sentence instead
 
 
 # --- page shell (task 4) ---------------------------------------------------------------------

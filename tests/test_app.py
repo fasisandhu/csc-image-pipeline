@@ -108,7 +108,8 @@ def test_preview_two_costs(client):
     assert isinstance(b["warnings"], list) and b["needs_anchor"] is False
 
 
-def test_preview_reports_needs_anchor(client):  # POST /api/jobs enforces it: test_builder_api
+def test_preview_reports_needs_anchor(client, monkeypatch):  # POST /api/jobs enforces it: test_builder_api
+    monkeypatch.setattr(app_mod, "find_anchor", lambda cat, colour, gsm: None)
     olive = {**OAKMERE, "colour": "olive", "decoration": "none"}
     for k in ("design", "technique", "placement", "size_cm"):
         olive.pop(k)

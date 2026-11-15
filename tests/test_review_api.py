@@ -694,6 +694,35 @@ def test_rules_activate_validates_text_and_scope(env, client):
     assert [x["status"] for x in client.get("/api/rules").json()["rules"]] == ["active", "dismissed", "active"]
 
 
+@pytest.mark.parametrize("text, shown", [
+    ("Rib at the cuffs/hem stays 2x2.", "Rib at the cuffs/hem stays 2x2."),
+    ("A 1/4 zip pull.", "A 1/4 zip pull."),
+    ("An 80/20 cotton-poly fleece, and/or a brushed back.", "An 80/20 cotton-poly fleece, and/or a brushed back."),
+    ("Match brand/designs/oakmere.svg exactly.", "Match oakmere.svg exactly."),
+    ("Seen in out/finals/zz_final.jpg and ./refs/anchors/a.png", "Seen in zz_final.jpg and a.png"),
+    (r"From d:/Workspace/csc/specs/x.json or C:\Users\me\y.png", "From x.json or y.png"),
+    ("Logged at /home/me/csc/log.jsonl", "Logged at log.jsonl"),
+    ("Needs .env and STUDIO_OWNER_CLAUDE_OAUTH_TOKEN", "Needs a settings file and a setting"),
+])
+def test_rule_words_keep_slashes_but_not_paths(text, shown):
+    """Minor 7: rule notes and sentences lose only setting names, absolute paths and repo paths (their folders), never
+    an ordinary slash: the page sends the shown sentence back on Switch on."""
+    assert app_mod.public_words(text) == shown
+    assert library.public_rule(0, {"status": "pending", "note": text, "prompt_text": text}) | {"index": 0} == {
+        "index": 0, "status": "pending", "note": shown, "prompt_text": shown, "applies_to": None, "from_shot": None,
+        "date": None, "activated_by": None, "dismissed_by": None}
+
+
+def test_rule_with_a_slash_switches_on_whole(env, client):
+    env.brain.answer = {"prompt_text": "Rib at the cuffs/hem stays 2x2.", "applies_to": "all"}
+    post(client, env.final().id, "reject", {"note": "cuffs/hem rib too thin; see brand/x.png"})
+    (rule,) = client.get("/api/rules").json()["rules"]
+    assert rule["note"] == "cuffs/hem rib too thin; see x.png" and rule["prompt_text"] == "Rib at the cuffs/hem stays 2x2."
+    r = client.post("/api/rules/0/activate", json={"prompt_text": rule["prompt_text"], "applies_to": "all"})
+    assert r.status_code == 200 and r.json()["rule"]["prompt_text"] == "Rib at the cuffs/hem stays 2x2."
+    assert "Rib at the cuffs/hem stays 2x2." in compile_spec(build_spec(PLAIN)).prompts["paragraph"]
+
+
 def test_rule_activation_keeps_every_prompt_inside_220_words(env, client):
     for note in ("hood flat", "cuffs loose", "colour off"):
         post(client, env.final().id, "reject", {"note": note})

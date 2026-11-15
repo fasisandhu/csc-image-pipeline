@@ -77,6 +77,14 @@ CROSS_SITE = "This request came from another site and was refused."
 READS = ("GET", "HEAD")  # the only methods a page on another site may use here
 FOLDERS = re.compile(r"(?:[\w.:~-]*[/\\])+(?=[\w.~-])")  # the folder part of a path, "/" or "\"
 SETTING_NAMES = re.compile(r"\b(?=STUDIO_|[A-Z0-9_]*(?:KEY|TOKEN|SECRET|ACCOUNT_ID))[A-Z][A-Z0-9_]{2,}\b")
+# Free text (rule notes and sentences, AI notes, prompts) keeps its ordinary slashes ("cuffs/hem", "1/4"): only the
+# folders of an absolute path (C:\..., d:/..., /home/..., ~/...) or of a path starting in a repo folder are cut.
+REPO_FOLDERS = ("out", "brand", "refs", "specs", "prompts", "pipeline", "studio", "catalogue")
+PATH_FOLDERS = re.compile(
+    r"(?<![\w./\\-])"                                       # where a path starts, not inside a word or a path
+    r"(?:[A-Za-z]:[\\/]|~[\\/]|[\\/](?=[\w.~-]+[\\/])|(?:\./)?(?:" + "|".join(REPO_FOLDERS) + r")[\\/])"
+    r"(?:[\w.~-]+[\\/])*")                                  # and the folders after it; the file name stays
+ENV_FILE = re.compile(r"(?<![\w.])\.env(?:\.\w+)?\b")
 log = logging.getLogger(__name__)
 
 app = FastAPI(title="CSC Studio", dependencies=[Depends(current_user)])
@@ -236,8 +244,16 @@ def file_names_only(text: str) -> str:
 
 
 def public_text(text: str) -> str:
-    """file_names_only, and a setting's name (STUDIO_*, or one with KEY, TOKEN or SECRET) becomes "a setting"."""
+    """file_names_only, and a setting's name (STUDIO_*, or one with KEY, TOKEN or SECRET) becomes "a setting".
+    For the studio's own messages (errors, reasons, warnings), which may name any path."""
     return SETTING_NAMES.sub("a setting", file_names_only(text))
+
+
+def public_words(text: str) -> str:
+    """public_text for free text that people or the AI wrote (rule notes and sentences, AI notes, stray text read
+    from an image, prompts, alt text): only absolute paths and repo paths lose their folders, .env becomes "a
+    settings file" and a setting's name "a setting"; every other slash stays ("cuffs/hem", "1/4")."""
+    return SETTING_NAMES.sub("a setting", ENV_FILE.sub("a settings file", PATH_FOLDERS.sub("", text)))
 
 
 def caption_for(answers: dict) -> str:

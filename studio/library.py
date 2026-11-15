@@ -61,8 +61,15 @@ LOGO_NOT_CLEARED = "The logo on this image did not pass its check. Ask for a cha
 
 
 def _public(text):
+    """The studio's own messages (reasons, errors): every folder cut, setting names hidden."""
     from .app import public_text  # lazy: app imports this module
     return public_text(text) if isinstance(text, str) else text
+
+
+def _words(text):
+    """Free text people or the AI wrote: only absolute and repo paths lose their folders (app.public_words)."""
+    from .app import public_words  # lazy: app imports this module
+    return public_words(text) if isinstance(text, str) else text
 
 
 def served(path: str | None) -> str | None:
@@ -261,7 +268,7 @@ def _colour_words(colour: dict | None, tolerance: float) -> dict | None:
 def _text_words(stray: dict | None) -> dict | None:
     if stray is None:
         return None
-    found = [_public(t) for t in stray.get("stray") or []]
+    found = [_words(t) for t in stray.get("stray") or []]
     words = "No stray text" if not found else "Text that should not be there: " + ", ".join(f"“{t}”" for t in found)
     return {"ok": stray.get("result") == "pass", "found": found, "words": words}
 
@@ -297,7 +304,7 @@ def checks_summary(steps: list[dict], latest: str | None) -> dict | None:
         "colour": _colour_words(r.get("colour"), tolerance),
         "text": _text_words(r.get("stray")),
         "logo": _logo_words(r.get("logo")),
-        "lines": [{"text": _public(line.get("text")), "ok": line.get("ok"), "note": _public(line.get("note") or ""),
+        "lines": [{"text": _words(line.get("text")), "ok": line.get("ok"), "note": _words(line.get("note") or ""),
                    "fault": code_words(line.get("code"))} for line in visual.get("lines") or []],
         "visual_error": _public(visual.get("error")),
         "fixed": [code_words(c) for c in dict.fromkeys(before) if c not in codes],
@@ -316,7 +323,7 @@ def shot_words(job: dict) -> str:
     cast = ((spec.get("shot") or {}).get("model") or {})
     if cast.get("present") and cast.get("cast"):
         what = f"{what} ({cast['cast']})" if what else cast["cast"]
-    return _public(": ".join(p for p in (label, what) if p))
+    return _words(": ".join(p for p in (label, what) if p))
 
 
 def cost_so_far(job: dict, steps: list[dict]) -> float:
@@ -411,7 +418,7 @@ def _prompt(job: dict) -> str | None:
         pass
     try:
         layout = [job["layout"]] if job.get("layout") else []
-        return _public(compile_spec(spec, layout).prompts["paragraph"])
+        return _words(compile_spec(spec, layout).prompts["paragraph"])
     except (CompileError, KeyError, TypeError, ValueError, OSError):
         return None
 
@@ -426,7 +433,7 @@ def export_record(latest: str) -> dict | None:
     with_pdf = next((x for x in reversed(events) if x.get("pdf")), None)
     return {"files": [{"path": p, "width": _width(p)} for p in e.get("files") or [] if served(p)],
             "pdf": served(with_pdf["pdf"]) if with_pdf else None,
-            "alt": _public(e.get("alt")), "caption": _public(e.get("caption"))}
+            "alt": _words(e.get("alt")), "caption": _words(e.get("caption"))}
 
 
 def _width(path: str) -> int | None:
@@ -460,7 +467,7 @@ def library_item(job: dict, steps: list[dict]) -> dict | None:
         **facts, "ai_model_label": model_label(entry.get("model"), entry.get("tier")),  # never the model id
         "reference": _is_reference(job, latest),
         "cost_usd": cost_so_far(job, steps),
-        "approved_by": _public(approved.get("by")), "approved_at": approved.get("ts"),
+        "approved_by": _words(approved.get("by")), "approved_at": approved.get("ts"),
         "prompt": _prompt(job), "export": export_record(latest),
     }
 
@@ -493,8 +500,8 @@ def scope_options() -> list[dict]:
 
 
 def public_rule(index: int, rule: dict) -> dict:
-    return {"index": index, "status": rule.get("status"), "note": _public(rule.get("note") or ""),
-            "prompt_text": _public(rule.get("prompt_text") or ""), "applies_to": rule.get("applies_to"),
+    return {"index": index, "status": rule.get("status"), "note": _words(rule.get("note") or ""),
+            "prompt_text": _words(rule.get("prompt_text") or ""), "applies_to": rule.get("applies_to"),
             "from_shot": rule.get("from_shot"), "date": rule.get("date"),
             "activated_by": rule.get("activated_by"), "dismissed_by": rule.get("dismissed_by")}
 

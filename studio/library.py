@@ -417,14 +417,16 @@ def _prompt(job: dict) -> str | None:
 
 
 def export_record(latest: str) -> dict | None:
-    """The latest export of this image: its web files and approval PDF (only those the files route serves), alt
-    text and caption."""
+    """This image's exports: the latest one's web files, alt text and caption, and the approval PDF of the latest
+    export that made one (a later web-only export leaves it on disk). Only files the files route serves."""
     events = ledger.events(latest, "exported")
     if not events:
         return None
     e = events[-1]
+    with_pdf = next((x for x in reversed(events) if x.get("pdf")), None)
     return {"files": [{"path": p, "width": _width(p)} for p in e.get("files") or [] if served(p)],
-            "pdf": served(e.get("pdf")), "alt": _public(e.get("alt")), "caption": _public(e.get("caption"))}
+            "pdf": served(with_pdf["pdf"]) if with_pdf else None,
+            "alt": _public(e.get("alt")), "caption": _public(e.get("caption"))}
 
 
 def _width(path: str) -> int | None:

@@ -851,6 +851,21 @@ def test_export_requires_approval_and_returns_files(env, client):
                               "caption": body["caption"]}
 
 
+def test_export_record_keeps_the_latest_pdf(env, client):
+    """Minor 2: the files are the latest export's; the PDF is the latest export's that made one, while it is served."""
+    j = env.final(PLAIN, size=(820, 1025))
+    post(client, j.id, "approve")
+    base = f"out/export/{j.sid}/{j.sid}"
+    assert client.post(f"/api/library/{j.id}/export", json={"pdf": True}).json()["pdf"] == f"{base}-approval.pdf"
+    body = client.post(f"/api/library/{j.id}/export", json={"pdf": False}).json()  # a web-only export after it
+    assert body["pdf"] == f"{base}-approval.pdf" and [f["width"] for f in body["files"]] == [800, 400]
+    (item,) = [i for i in client.get("/api/library").json()["items"] if i["id"] == j.id]
+    assert item["export"]["pdf"] == f"{base}-approval.pdf"
+
+    (ROOT / f"{base}-approval.pdf").unlink()  # gone from disk: no link to a missing file
+    assert client.post(f"/api/library/{j.id}/export", json={"pdf": False}).json()["pdf"] is None
+
+
 # --- the logo gate: a design the model rendered is approved or exported only once its logo passed ---------------
 LOGO_REFUSED = {"error": "The logo on this image did not pass its check. Ask for a change, or reject it."}
 

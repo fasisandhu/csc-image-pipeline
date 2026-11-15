@@ -32,6 +32,8 @@ CREATE TABLE IF NOT EXISTS jobs (
     created TEXT NOT NULL,
     updated TEXT NOT NULL
 )"""
+# Columns added after plan 1. connect() adds any that are missing, so old databases keep working.
+ADDED_COLUMNS = {"layout": "TEXT"}  # layout: the picked sketch (a drafts job's file) a final is built on
 
 
 def connect(path: Path | None = None) -> sqlite3.Connection:
@@ -41,6 +43,15 @@ def connect(path: Path | None = None) -> sqlite3.Connection:
     conn.row_factory = sqlite3.Row
     with conn:
         conn.execute(SCHEMA)
+        have = {r["name"] for r in conn.execute("PRAGMA table_info(jobs)")}
+        for col, typ in ADDED_COLUMNS.items():
+            if col in have:
+                continue
+            try:
+                conn.execute(f"ALTER TABLE jobs ADD COLUMN {col} {typ}")
+            except sqlite3.OperationalError as e:  # another connection added it first
+                if "duplicate column" not in str(e):
+                    raise
     return conn
 
 
@@ -58,18 +69,31 @@ def _row(r: sqlite3.Row | None) -> dict | None:
 
 
 def create_job(conn, user: str, kind: str, answers: dict, spec: dict, estimate: dict,
-               confirmed_by: str | None = None) -> int:
+               confirmed_by: str | None = None, layout: str | None = None) -> int:
     t = _now()
     with conn:
         cur = conn.execute(
-            "INSERT INTO jobs (user, kind, status, answers, spec, estimate, confirmed_by, created, updated)"
-            " VALUES (?, ?, 'queued', ?, ?, ?, ?, ?, ?)",
-            (user, kind, json.dumps(answers), json.dumps(spec), json.dumps(estimate), confirmed_by, t, t))
+            "INSERT INTO jobs (user, kind, status, answers, spec, estimate, confirmed_by, layout, created, updated)"
+            " VALUES (?, ?, 'queued', ?, ?, ?, ?, ?, ?, ?)",
+            (user, kind, json.dumps(answers), json.dumps(spec), json.dumps(estimate), confirmed_by, layout, t, t))
     return cur.lastrowid
 
 
 def get_job(conn, job_id: int) -> dict | None:
     return _row(conn.execute("SELECT * FROM jobs WHERE id = ?", (job_id,)).fetchone())
+
+
+def list_jobs(conn, user: str, limit: int = 20) -> list[dict]:
+    """This user's jobs, newest first."""
+    rows = conn.execute("SELECT * FROM jobs WHERE user = ? ORDER BY id DESC LIMIT ?", (user, limit))
+    return [_row(r) for r in rows]
+
+
+def sketch_files(conn, user: str, shot_id: str) -> list[str]:
+    """Files of this user's finished drafts jobs for this shot: the sketches a final may use as its layout."""
+    rows = conn.execute("SELECT * FROM jobs WHERE user = ? AND kind = 'drafts' AND status = 'done'", (user,))
+    return [f for job in map(_row, rows) if job["spec"]["shot"]["shot_id"] == shot_id
+            for f in (job["result"] or {}).get("files", [])]
 
 
 def next_queued(conn) -> dict | None:

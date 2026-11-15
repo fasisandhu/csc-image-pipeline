@@ -79,8 +79,10 @@ class Worker:
             conn.close()
 
     def _run(self, job: dict, result: dict) -> dict:
-        """Fill `result` ({"files", "cost_usd"}) call by call, so a failure part-way keeps what was made."""
-        c = compile_spec(job["spec"])
+        """Fill `result` ({"files", "cost_usd"}) call by call, so a failure part-way keeps what was made.
+        A final's layout was checked against the user's sketches for this shot when the job was created."""
+        layout = [job["layout"]] if job["kind"] == "final" and job["layout"] else []
+        c = compile_spec(job["spec"], layout)
         if job["kind"] == "final":
             _write_spec(job["spec"])
         routes = routes_for(c, job["kind"])

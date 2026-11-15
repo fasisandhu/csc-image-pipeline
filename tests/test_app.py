@@ -79,7 +79,7 @@ def get_job(job_id: int) -> dict:
 
 def test_health(client):
     r = client.get("/api/health")
-    assert r.status_code == 200 and r.json() == {"ok": True, "budget": ledger.status()}
+    assert r.status_code == 200 and r.json()["ok"] is True and r.json()["budget"] == ledger.status()
 
 
 def test_questions_endpoint(client):
@@ -108,7 +108,7 @@ def test_preview_two_costs(client):
     assert isinstance(b["warnings"], list) and b["needs_anchor"] is False
 
 
-def test_needs_anchor_reported_not_enforced(client):
+def test_preview_reports_needs_anchor(client):  # POST /api/jobs enforces it: test_builder_api
     olive = {**OAKMERE, "colour": "olive", "decoration": "none"}
     for k in ("design", "technique", "placement", "size_cm"):
         olive.pop(k)
@@ -152,7 +152,7 @@ def test_incomplete_answers_are_422(client):
 
 def test_job_over_one_dollar_needs_confirm(client, monkeypatch):
     est = {"base_usd": 1.5, "worst_usd": 13.5, "action": "run", "reason": "", "tier": "premium", "model": "m"}
-    monkeypatch.setattr(app_mod, "estimate", lambda spec, kind="final": dict(est))
+    monkeypatch.setattr(app_mod, "estimate", lambda spec, kind="final", layout_refs=(): dict(est))
     r = client.post("/api/jobs", json={"answers": OAKMERE, "kind": "final"})
     assert r.status_code == 409 and "confirm" in r.json()["error"]
     assert job_count() == 0

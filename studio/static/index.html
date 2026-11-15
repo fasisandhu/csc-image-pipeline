@@ -669,6 +669,8 @@
                         @input="$store.studio.setRuleText(r, $event.target.value)"></textarea>
               <p class="small rule-count" :id="'rule-count-' + r.index" :class="{why: $store.studio.ruleTooLong(r)}"
                  x-text="$store.studio.ruleCountText(r)"></p>
+              <!-- the AI's draft can add a garment detail the note never gave (final review Minor 10) -->
+              <p class="small rule-check">Check every garment detail against our catalogue before switching on.</p>
               <label class="lbl" :for="'rule-scope-' + r.index">Where it applies</label>
               <select class="sel" :id="'rule-scope-' + r.index" :disabled="$store.studio.ruleBusy(r)"
                       @change="$store.studio.setRuleScope(r, $event.target.value)">

@@ -48,6 +48,7 @@ A reference packshot is the approved plain front packshot of one style, colour a
 Your rejection note waits under **Rules from rejection notes**, with a one-sentence rule the AI drafted from it.
 
 - Edit the sentence if you like, and pick **Where it applies**: all images, packshots, on-model, or one style.
+- Check every garment detail in it against our catalogue before switching it on: the AI's draft can add a detail your note never gave.
 - **Switch on** adds it to every prompt in that scope from then on. Studio refuses a rule that would make the prompt too long.
 - **Dismiss** drops it for good.
 

@@ -287,3 +287,11 @@ def test_web_sizes_follow_the_export_widths(monkeypatch):
     assert f"up to {len(widths)} web sizes ({listed} pixels wide" in page and "three" not in page
     monkeypatch.setattr(finish, "WEBP_WIDTHS", (1200, 600))
     assert "up to 2 web sizes (1200 and 600 pixels wide" in guide.render("review-and-approve")
+
+
+def test_each_pending_rule_asks_for_a_catalogue_check():
+    """Minor 10: an AI draft can add a garment fact the note never gave; each pending rule asks the person to check."""
+    page = static_text("index.html")
+    pending = re.search(r'<template x-for="r in \$store\.studio\.pendingRules\(\)".*?</template>\s*</ul>', page, re.S)
+    assert pending, "pending rules list missing"
+    assert "Check every garment detail against our catalogue before switching on." in pending.group(0)

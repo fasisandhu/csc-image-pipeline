@@ -743,6 +743,17 @@ def test_activated_rule_reaches_compiled_prompts_of_its_scope_only(env, client):
     assert hood in zip_shot and zipped in zip_shot
 
 
+def test_plugin_skill_never_switches_a_rule_on():
+    """I3: only a person's click in the studio switches a rule on (activated_by, the 220-word check). The plugin's
+    skill drafts the rule's words and scope, leaves it pending and sends the user to the Rules panel."""
+    skill = (ROOT / "plugins" / "csc-studio" / "skills" / "finish-and-export" / "SKILL.md").read_text(encoding="utf-8")
+    for leak in ("status: active", '"status": "active"', "`active`", "set_status", "activate-rule"):
+        assert leak not in skill, leak
+    assert "`pending`" in skill and "`prompt_text`" in skill and "`applies_to`" in skill
+    assert "Rules from rejection notes" in skill and "Switch on" in skill and "Review" in skill
+    assert "Never set or change its `status`" in skill and "stays `pending`" in skill
+
+
 # --- library -------------------------------------------------------------------------------------
 def test_library_lists_only_approved_with_record(env, client):
     a = env.final(PLAIN)

@@ -26,7 +26,14 @@ Each writes a new file next to the source (`_cc`, `_bg`). QA the new file before
    - approved: `$PY -m pipeline.finish approve <image> --note "user: <their words>"`
    - rejected: `$PY -m pipeline.finish reject <image> --note "<their reason>"`
 
-A rejection note lands in `brand/prompt_rules.json` as `pending`. Write it as one positive prompt sentence in `prompt_text`, set `applies_to` (`all`, `packshot`, `on_model` or a catalogue id) and `status: active`, then show the user the rule.
+A rejection note lands in `brand/prompt_rules.json` as a `pending` rule. You may draft it for the user:
+
+1. Write the note as one positive prompt sentence (at most 40 words, only what the note says, no new garment facts) in that rule's `prompt_text`.
+2. Set its `applies_to`: `all`, `packshot`, `on_model` or a catalogue id.
+3. Never set or change its `status`: the rule stays `pending`.
+4. Show the user the draft and tell them to switch it on themselves in CSC Studio: the **Review** tab, **Rules from rejection notes**, **Switch on**.
+
+Only that click turns a rule on. It records who did it (`activated_by`) and refuses a rule that would push any prompt past 220 words. A rule you leave pending reaches no prompt.
 
 ## Export (approved files only)
 

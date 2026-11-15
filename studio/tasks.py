@@ -2,6 +2,9 @@
 from __future__ import annotations
 
 import json
+from pathlib import Path
+
+from pipeline.compile import load_json
 
 from .brain import Brain
 from .questions import missing, resolve, valid_value
@@ -86,3 +89,61 @@ def read_brief(text: str, brain: Brain, answers: dict | None = None, user: str =
     hint = _colour_hint(data.get("colour_word")) if "colour" not in final else None
     return {"answers": final, "unknown": missing(final), "colour_hint": hint,
             "provider": res.provider, "fallback": res.fallback}
+
+
+_NOTE_MAX = 200
+
+
+def repair_codes() -> list[str]:
+    """Every reason code the pipeline knows (brand/repairs.json); the brain may name no other."""
+    return list(load_json("brand/repairs.json")["codes"])
+
+
+def visual_review(image: Path, checklist: list[str], brain: Brain, user: str = "owner") -> dict:
+    """Judge each checklist line by eye. Returns {"lines": [{text, ok, code, note}], "provider", "fallback"}.
+
+    Only the given lines and the known reason codes survive: an invented line or code is dropped, a line the
+    brain did not judge comes back ok None ("not checked"), and a passing line carries no code.
+    """
+    texts = list(dict.fromkeys(checklist))
+    if not texts:
+        raise ValueError("visual_review needs at least one checklist line")
+    codes = repair_codes()
+    line = {"type": "object", "properties": {
+        "text": {"type": "string", "enum": texts},
+        "ok": {"type": "boolean"},
+        "code": {"anyOf": [{"type": "string", "enum": codes}, {"type": "null"}]},
+        "note": {"type": "string"},
+    }, "required": ["text", "ok", "code", "note"], "additionalProperties": False}
+    schema = {"type": "object", "properties": {"lines": {"type": "array", "items": line}},
+              "required": ["lines"], "additionalProperties": False}
+    prompt = (
+        "Look at this hoodie image and judge each checklist line below strictly, against what you can see. "
+        "The garment facts (fit, shoulder seam, fabric weight, construction) are already written into each line, "
+        "so judge the image against the line, not against what hoodies usually look like.\n\n"
+        "For every line give:\n"
+        "- text: the line, copied exactly;\n"
+        "- ok: true only if the image clearly meets the line. A line starting 'Shows:' fails if that part is not "
+        "visible. Any other construction detail that this camera angle cannot show is ok, unless something "
+        "visible contradicts it;\n"
+        "- code: when ok is false, the one reason code from the list below that names the fault, or null if none "
+        "fits (a person will look). Always null when ok is true;\n"
+        "- note: a few plain words on what you saw, one short sentence at most.\n\n"
+        "Checklist:\n" + "\n".join(f"- {t}" for t in texts) +
+        "\n\nReason codes: " + ", ".join(codes)
+    )
+    res = brain.ask_json("visual_review", prompt, schema, images=[Path(image)], user=user)
+    data = res.data if isinstance(res.data, dict) else {}
+    answers = data.get("lines") if isinstance(data.get("lines"), list) else []
+    known, judged = set(codes), {}
+    for a in answers:
+        if not isinstance(a, dict) or a.get("text") not in texts or a["text"] in judged:
+            continue  # an invented line, or a second answer for one already judged
+        if not isinstance(a.get("ok"), bool):
+            continue  # no verdict: the line stays "not checked"
+        code = a.get("code")
+        code = code if not a["ok"] and isinstance(code, str) and code in known else None
+        note = a.get("note") if isinstance(a.get("note"), str) else ""
+        judged[a["text"]] = {"text": a["text"], "ok": a["ok"], "code": code, "note": " ".join(note.split())[:_NOTE_MAX]}
+    lines = [judged.get(t) or {"text": t, "ok": None, "code": None, "note": ""} for t in texts]
+    return {"lines": lines, "provider": res.provider, "fallback": res.fallback}

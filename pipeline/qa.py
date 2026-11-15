@@ -233,6 +233,14 @@ def next_action(entry: dict, codes: list[str]) -> tuple[str, str | None]:
     return "finish", next(c for c, f in fixes.items() if f == "finish")
 
 
+def record_qa(entry: dict, image: str | Path, codes: list[str], colour: dict, note: str, action: str,
+              code: str | None, result: str | None = None, **extra) -> dict:
+    """The ledger `qa` event, shared by this CLI and the studio checks (which add `by` and their results)."""
+    return ledger.record({"event": "qa", "shot_id": entry["shot_id"], "file": rel(image),
+                          "result": result or ("pass" if not codes else "fail"), "reason_codes": codes,
+                          "colour": colour, "note": note, "next": action, "next_code": code, **extra})
+
+
 def checklist(shot_id: str) -> list[str]:
     compiled = ROOT / "prompts" / f"{shot_id}.json"
     if compiled.exists():
@@ -287,8 +295,7 @@ def main() -> int:
     codes = list(args.fail) + ([colour["code"]] if colour.get("code") else [])
     action, code = next_action(entry, codes)
     rel_image = rel(image)
-    ledger.record({"event": "qa", "shot_id": entry["shot_id"], "file": rel_image, "result": "pass" if not codes else "fail",
-                   "reason_codes": codes, "colour": colour, "note": args.note, "next": action, "next_code": code})
+    record_qa(entry, image, codes, colour, args.note, action, code)
     print(f"verdict {'pass' if not codes else 'fail'}  codes {codes or '-'}  next: {action}{' ' + code if code else ''}")
 
     if action in ("repair", "regenerate", "flag", "composite"):

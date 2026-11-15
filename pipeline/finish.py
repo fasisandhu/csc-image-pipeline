@@ -213,9 +213,10 @@ def _approval_pdf(im: Image.Image, spec: dict, record: dict, out_dir: Path) -> P
     return path
 
 
-def record_verdict(image: Path, verdict: str, note: str) -> None:
+def record_verdict(image: Path, verdict: str, note: str, by: str = "user") -> None:
+    """Record a person's verdict. `by` is who decided: "user" from this CLI, the studio user id from the page."""
     entry, spec = _spec_for(image)
-    ledger.record({"event": verdict, "file": rel(image), "shot_id": entry["shot_id"], "by": "user", "note": note})
+    ledger.record({"event": verdict, "file": rel(image), "shot_id": entry["shot_id"], "by": by, "note": note})
     if verdict == "rejected" and note:
         rules_path = ROOT / "brand" / "prompt_rules.json"
         rules = json.loads(rules_path.read_text(encoding="utf-8")) if rules_path.exists() else {"rules": []}

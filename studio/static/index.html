@@ -42,7 +42,8 @@
 
   <!-- the guide: a modal dialog; pages from /api/guide, drawn as text nodes by app.js (never as HTML) -->
   <dialog class="guide" id="guide" aria-labelledby="guide-title"
-          @close="$store.studio.guideClosed()" @click="$store.studio.guideBackdrop($event)">
+          @close="$store.studio.guideClosed()" @mousedown="$store.studio.guidePress($event)"
+          @click="$store.studio.guideBackdrop($event)">
     <div class="guide-box">
       <div class="guide-head">
         <h2 id="guide-title">Guide</h2>

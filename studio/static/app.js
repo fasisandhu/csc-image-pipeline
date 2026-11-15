@@ -238,7 +238,7 @@
   // guide: page texts fetched while the guide is open (cleared on each open, so numbers stay current);
   // guideSeq: only the newest page asked for is drawn
   const guideCache = new Map();
-  let guideSeq = 0;
+  let guideSeq = 0, guidePressOutside = false;  // guidePressOutside: the last press began on the backdrop
   // tour: where the keyboard goes back to when it ends, and the listeners that keep the card in place
   let tourReturn = null, tourFrame = 0, tourResize = null;
 
@@ -402,7 +402,13 @@
         const b = guideButton();
         if (b) b.focus();
       },
-      guideBackdrop(e) { if (e.target === guideDialog()) this.closeGuide(); },  // a click outside the box
+      // a click on the backdrop closes the guide, but not the end of a text selection dragged out of the page
+      guidePress(e) { guidePressOutside = e.target === guideDialog(); },
+      guideBackdrop(e) {
+        const outside = e.target === guideDialog() && guidePressOutside;
+        guidePressOutside = false;
+        if (outside) this.closeGuide();
+      },
       isGuidePage(p) { return this.guide.page === p.id; },
       async showGuidePage(id) {
         if (!GUIDE_PAGES.some(p => p.id === id)) return;  // only the server's fixed pages are ever asked for

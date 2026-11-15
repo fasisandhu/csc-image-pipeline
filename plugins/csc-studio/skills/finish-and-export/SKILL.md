@@ -26,6 +26,8 @@ Each writes a new file next to the source (`_cc`, `_bg`). QA the new file before
    - approved: `$PY -m pipeline.finish approve <image> --note "user: <their words>"`
    - rejected: `$PY -m pipeline.finish reject <image> --note "<their reason>"`
 
+A decorated image (a logo or design) may be approved or exported only if its logo passed verification (`pipeline.logo verify`, no reason codes) or it is a composite of the real artwork that no repair has redrawn since. Otherwise tell the user it cannot go out yet, and offer a logo repair or the composite. The command line does not enforce this yet; the CSC Studio Review tab does.
+
 A rejection note lands in `brand/prompt_rules.json` as a `pending` rule. You may draft it for the user:
 
 1. Write the note as one positive prompt sentence (at most 40 words, only what the note says, no new garment facts) in that rule's `prompt_text`.

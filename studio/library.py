@@ -246,7 +246,9 @@ def logo_cleared(spec: dict, steps: list[dict], latest: str | None) -> bool:
     if not latest:
         return False
     entry = ledger.find(latest)
-    if entry is not None and _composite_made(entry):
+    # a composite clears only while no AI repair has redrawn it (a repair keeps the composite as its root)
+    if entry is not None and _composite_made(entry) \
+            and not repair.repairs_made(entry.get("root") or entry.get("file")):
         return True
     check = latest_check(steps, latest)
     decos = (((check or {}).get("result") or {}).get("logo") or {}).get("decorations") or []

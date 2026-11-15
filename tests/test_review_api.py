@@ -962,6 +962,27 @@ def test_verified_or_composited_logo_can_be_approved(env, client):
     assert env.events("approved")[-1]["file"] == placed
 
 
+def test_ai_repair_of_a_composite_does_not_clear_the_logo(env, client):
+    """A composite clears the gate only while its pixels are the real artwork: once an AI repair redrew it, the
+    logo must pass its own check again."""
+    comp = env.final(DECORATED, review="needs_person", result=logo_result(["logo_text"]))
+    placed = env.image("finals", f"{comp.sid}_logo")
+    env.record({"shot_id": comp.sid, "provider": "local", "phase": "finish", "op": "composite",
+                "status": "ok", "file": placed, "source": comp.file, "root": placed, "cost_usd": 0.0})
+    env.step(comp.id, "composite", comp.file, placed)
+    redrawn = env.image("finals", f"{comp.sid}_repair1")
+    env.record({"shot_id": comp.sid, "provider": "gemini", "phase": "repair", "status": "ok", "file": redrawn,
+                "source": placed, "root": placed, "code": "hands", "cost_usd": 0.07})
+    env.step(comp.id, "repair", placed, redrawn)
+    env.step(comp.id, "check", redrawn, redrawn, result=logo_result(["logo_text"]))
+    item = client.get(f"/api/reviews/{comp.id}").json()
+    assert item["latest"] == redrawn and item["actions"]["approve"] is False
+    assert item["logo_note"] == LOGO_REFUSED["error"]
+    r = post(client, comp.id, "approve", {"note": "looks fine"})
+    assert (r.status_code, r.json()) == (409, LOGO_REFUSED)
+    assert not env.events("approved")
+
+
 def test_logo_gate_leaves_undecorated_shots_alone(env, client):
     """No design the model rendered: no logo to clear, whatever the logo check says (it never ran)."""
     j = env.final(PLAIN, review="needs_person", result={**check(), "logo": None}, size=(820, 1025),

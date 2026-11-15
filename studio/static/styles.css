@@ -270,7 +270,7 @@ ol.steps { list-style:none; padding:0; margin:10px 0 14px; }
 .cbadge { position:absolute; top:8px; left:8px; font-size:11px; line-height:1.4; font-weight:650; padding:3px 9px; border-radius:20px; background:rgba(255,255,255,.94); color:var(--acc); border:1px solid #cfe9da; }
 .cbadge.warn { color:#7a5200; border-color:#ecd8a6; }
 .shown-label { margin:8px 0 0; }
-.stage .cap { margin-top:2px; }
+.stage .cap { margin-top:8px; }
 button.th { width:74px; height:auto; padding:0 0 4px; display:flex; flex-direction:column; align-items:center; gap:3px; font:inherit; font-size:10.5px; line-height:1.25; text-align:center; color:var(--mut); background:#f3f2ee; cursor:pointer; }
 button.th img { display:block; width:100%; aspect-ratio:4 / 5; object-fit:cover; background:#e2e0da; }
 button.th[aria-pressed="true"] { border-color:var(--ink); color:var(--ink); font-weight:650; }

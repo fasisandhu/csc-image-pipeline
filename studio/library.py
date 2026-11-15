@@ -297,8 +297,12 @@ def cost_so_far(job: dict, steps: list[dict]) -> float:
 
 
 def _step(s: dict) -> dict:
+    """A review step as the browser gets it. file: its output's file name only (never a folder), kept when a check
+    moved that render to out/reject (its output path is then gone, so `output` is None); the page names each image
+    of the chain by the step whose file it is."""
     return {"id": s["id"], "kind": s["kind"], "label": STEP_WORDS.get(s["kind"], s["kind"]), "status": s["status"],
             "code": s["code"], "fault": code_words(s["code"]), "output": served(s["output"]),
+            "file": Path(s["output"]).name if s["output"] else None,
             "cost_usd": round(float(s.get("cost_usd") or 0.0), 4), "error": _public(s.get("error"))}
 
 

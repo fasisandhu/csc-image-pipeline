@@ -458,13 +458,14 @@
                           @click="$store.studio.selectReview(it.id)">
                 <span class="rj-th">
                   <template x-for="f in $store.studio.reviewThumb(it)" :key="f">
-                    <img x-bind="$store.studio.imgSrc(f)" alt="">
+                    <img x-bind="$store.studio.imgSrc(f)" alt="" @error="$store.studio.imageBroken(f)">
                   </template>
-                  <svg viewBox="0 0 100 100" aria-hidden="true" focusable="false" x-show="!it.latest"
+                  <svg viewBox="0 0 100 100" aria-hidden="true" focusable="false" x-show="!$store.studio.reviewThumb(it).length"
                        :fill="$store.studio.jobHex(it)"><use x-bind="$store.studio.hoodie(it.answers && it.answers.catalogue)"></use></svg>
                 </span>
                 <span class="rj-txt"><span class="rj-title" x-text="it.words"></span>
                   <small x-text="$store.studio.reviewMeta(it)"></small>
+                  <small class="rj-cap" x-show="$store.studio.reviewThumb(it).length" x-text="it.caption"></small>
                   <span><span class="spill" :class="$store.studio.reviewClass(it)" x-text="$store.studio.reviewWord(it)"></span></span></span>
               </button></li>
             </template>
@@ -504,18 +505,18 @@
                 <p class="small" x-show="$store.studio.imageMissing(it)">This image file is not available.</p>
               </div>
               <p class="small shown-label" x-text="$store.studio.shownLabel(it)"></p>
-              <p class="cap" x-text="it.caption"></p>
-              <!-- before and after: one toggle per image of this shot, oldest first -->
+              <!-- before and after: one toggle per image of this shot, oldest first; the caption below is theirs too -->
               <div class="thumbs" role="group" aria-label="Before and after: this shot's images, oldest first"
                    x-show="$store.studio.reviewThumbs(it).length > 1">
                 <template x-for="t in $store.studio.reviewThumbs(it)" :key="t.key">
                   <button type="button" class="th" :aria-pressed="String($store.studio.isShown(it, t))"
-                          :aria-label="t.long" @click="$store.studio.showImage(it, t)">
+                          :aria-label="t.long + '. ' + it.caption" @click="$store.studio.showImage(it, t)">
                     <template x-for="f in t.files" :key="f"><img x-bind="$store.studio.imgSrc(f)" alt=""></template>
                     <span aria-hidden="true" x-text="t.short"></span>
                   </button>
                 </template>
               </div>
+              <p class="cap" x-text="it.caption"></p>
             </div>
 
             <div class="card rv-card">

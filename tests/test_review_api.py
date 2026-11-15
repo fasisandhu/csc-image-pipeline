@@ -273,6 +273,34 @@ def test_review_list_and_item(env, client):
         assert client.get(f"/api/reviews/{missing}").status_code == 404
 
 
+def test_review_steps_name_their_output_file(env, client):
+    """The page names each image of the chain by the step that made it. A render the checks moved to out/reject is
+    no longer at the step's output path (so that path is not served), but it keeps its file name: each step carries
+    that name, never a folder. A step with no output has none."""
+    j = env.final(PLAIN, review="checking")
+    moved = env.move(j.file)
+    (first,) = steps(j.id)
+    with closing(db.connect()) as conn:
+        db.set_step(conn, first["id"], "done", output=moved, cost_usd=0.01, result=check(
+            ["drawcord_shape"], "repair", "drawcord_shape", bad_line=(0, False, "drawcord_shape")))
+    fixed = env.image("finals", f"{j.sid}_repair1")
+    env.step(j.id, "repair", moved, fixed, code="drawcord_shape")
+    fixed_moved = env.move(fixed)  # the next check set the repair aside too
+    env.step(j.id, "check", fixed, fixed_moved, result=check(
+        ["hood_shape"], "regenerate", bad_line=(1, False, "hood_shape")))
+    env.step(j.id, "regenerate", fixed_moved, None, status="failed", error="stopped")
+    with closing(db.connect()) as conn:
+        db.set_review(conn, j.id, "needs_person", reason="please look")
+
+    item = client.get(f"/api/reviews/{j.id}").json()
+    assert item["images"] == [moved, fixed_moved]
+    rep = item["steps"][1]
+    assert rep["kind"] == "repair" and rep["output"] is None  # its path is gone: not served
+    assert rep["file"] == Path(fixed_moved).name == Path(fixed).name
+    assert [s["file"] for s in item["steps"]] == [Path(moved).name, Path(fixed).name, Path(fixed_moved).name, None]
+    assert all("/" not in (s["file"] or "") and "\\" not in (s["file"] or "") for s in item["steps"])
+
+
 def test_approve_once_then_409(env, client):
     j = env.final()
     r = post(client, j.id, "approve", {"note": ""})

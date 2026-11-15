@@ -300,6 +300,26 @@
     return BUSY_REVIEW.has(it.review) || (Array.isArray(it.steps) && it.steps.some(s => BUSY_STEP.has(s.status)));
   }
   function smallMoney(n) { const v = Number(n) || 0; return v > 0 && v < 0.005 ? 'under $0.01' : money(v); }
+  function fileName(p) { return String(p || '').split('/').pop(); }
+  // The finished fix that made each of the chain's images (studio.library.chain_images skips a step with no output
+  // and an output already listed, so position alone can shift): matched by its served output path, else by its file
+  // name (a render the checks moved to out/reject keeps its name, but not its path). The first image, and one no
+  // step names, get none. Only when no fix step says what it made is their order used.
+  function chainFixes(it) {
+    const images = Array.isArray(it.images) ? it.images : [];
+    const fixes = (Array.isArray(it.steps) ? it.steps : []).filter(s => s.kind !== 'check' && s.status === 'done');
+    const named = fixes.some(s => s.output || s.file);
+    const used = new Set();
+    return images.map((p, k) => {
+      if (k === 0) return null;
+      if (!named) return fixes[k - 1] || null;
+      if (!p) return null;
+      const s = fixes.find(f => !used.has(f.id) && f.output === p)
+        || fixes.find(f => !used.has(f.id) && f.file && f.file === fileName(p));
+      if (s) used.add(s.id);
+      return s || null;
+    });
+  }
 
   function guideDialog() { return document.getElementById('guide'); }
   function guideButton() { return document.getElementById('guide-btn'); }
@@ -1339,6 +1359,7 @@
         const old = new Map(this.review.items.map(i => [i.id, i]));
         const fresh = (Array.isArray(items) ? items : []).filter(i => i && Number.isInteger(i.id))
           .map(i => ((reviewActed.get(i.id) || 0) > since && old.has(i.id) ? old.get(i.id) : i));
+        fresh.forEach(i => this.unbreak(old.get(i.id), i));
         if (this.review.loaded) {  // say what changed by itself (a person's own click is answered in place)
           const moved = fresh.filter(i => !old.has(i.id) || old.get(i.id).review !== i.review);
           const said = moved.map(i => this.statusLine(i));
@@ -1354,6 +1375,7 @@
         reviewActed.set(item.id, ++reviewEpoch);
         const i = this.review.items.findIndex(x => x.id === item.id);
         const was = i >= 0 ? this.review.items[i].review : undefined;
+        this.unbreak(i >= 0 ? this.review.items[i] : null, item);
         if (i >= 0) this.review.items.splice(i, 1, item);
         else this.review.items.unshift(item);
         if (announce && was !== item.review) this.review.announce = this.statusLine(item);
@@ -1374,10 +1396,16 @@
         if (reviewTimer || this.review.lost || document.hidden || !this.review.items.some(busyReview)) return;
         reviewTimer = setTimeout(() => { reviewTimer = null; this.loadReviews(); }, REVIEW_POLL_MS);
       },
-      reviewCheckAgain() {
-        Object.assign(this.review, { lost: false, error: '' });
+      reviewCheckAgain() {  // also tries again any image that would not load
+        Object.assign(this.review, { lost: false, error: '', broken: {} });
         reviewFails = 0;
         this.loadReviews();
+      },
+      unbreak(was, now) {  // an item that changed may have its images back: they are tried again
+        if (!was || was.updated === now.updated) return;
+        for (const p of [now.layout, now.latest, ...(Array.isArray(now.images) ? now.images : [])]) {
+          if (p && this.review.broken[p]) delete this.review.broken[p];
+        }
       },
       reviewLostText() { return this.review.lost ? REVIEW_NOTES.lost : ''; },
       reviewNote(key) { return REVIEW_NOTES[key] || ''; },
@@ -1397,7 +1425,7 @@
       reviewClass(it) { return REVIEW_CLASS[it.review] || ''; },
       reviewMeta(it) { return [clockText(it.created), smallMoney(it.cost_usd)].filter(Boolean).join(' · '); },
       reviewByline(it) { return ['Asked for by ' + it.user, clockText(it.created)].filter(Boolean).join(' · '); },
-      reviewThumb(it) { return it.latest ? [it.latest] : []; },  // keyed: x-bind objects bind once
+      reviewThumb(it) { return it.latest && !this.review.broken[it.latest] ? [it.latest] : []; },  // keyed: x-bind binds once
 
       // --- review: progress line --------------------------------------------------------------------
       reviewStages(it) {  // Sketches → Final → Checks → Fixes → Your review → Export
@@ -1432,15 +1460,14 @@
                      long: 'The sketch it was built on (free, never published)' });
         }
         const images = Array.isArray(it.images) ? it.images : [];
-        // the chain's images after the first are the outputs of its finished fixes, in order (studio.library)
-        const fixes = (Array.isArray(it.steps) ? it.steps : []).filter(s => s.kind !== 'check' && s.status === 'done');
+        const made = chainFixes(it);  // the fix step that made each image, if any says so
         images.forEach((p, k) => {
           const latest = k === images.length - 1, many = images.length > 1;
           let short = many ? 'First' : 'Final', long = many ? 'The first image' : 'The final image';
-          if (k > 0) {
-            const s = fixes[k - 1];
+          if (k > 0) {  // an image no step names stays neutral: never another step's name
+            const s = made[k];
             short = (s && FIX_SHORT[s.kind]) || 'Image ' + (k + 1);
-            long = this.fixWords(s) || 'Image ' + (k + 1);
+            long = (s && this.fixWords(s)) || 'Image ' + (k + 1);
           }
           out.push({ key: 'img' + k, path: p || null, files: p ? [p] : [], latest,
                      short: latest && many ? short + ' · latest' : short, long: latest && many ? long + ' (latest)' : long });

@@ -4,8 +4,58 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>CSC Studio</title>
+<link rel="stylesheet" href="/static/styles.css">
+<script defer src="/static/app.js"></script>
+<script defer src="/static/vendor/marked-12.0.2.min.js"></script>
+<script defer src="/static/vendor/alpinejs-3.14.1.min.js"></script>
 </head>
 <body>
-<p>The image builder is being set up.</p>
+<div class="ui" x-data x-cloak>
+  <header class="top">
+    <div class="logo">CSC <b>Studio</b></div>
+    <nav class="tabs" aria-label="Sections">
+      <template x-for="t in $store.studio.ui.tabs" :key="t.id">
+        <a href="#" :class="{cur: $store.studio.ui.tab === t.id, soon: t.dim}"
+           :aria-current="$store.studio.ui.tab === t.id ? 'page' : null"
+           @click.prevent="$store.studio.openTab(t)" x-text="t.label"></a>
+      </template>
+    </nav>
+    <div class="pill">
+      <span x-text="$store.studio.budgetText()"></span>
+      <div class="meter" role="progressbar" aria-label="Monthly budget used" aria-valuemin="0" aria-valuemax="100"
+           :aria-valuenow="$store.studio.budgetPct()"><i :style="'width:' + $store.studio.budgetPct() + '%'"
+           :class="{warn: $store.studio.budgetPct() >= 80}"></i></div>
+      <button type="button" class="btn guide-btn" @click="$store.studio.toggleGuide()"
+              :aria-expanded="$store.studio.ui.guideOpen">? Guide</button>
+    </div>
+  </header>
+
+  <p class="note" x-show="$store.studio.ui.note" x-text="$store.studio.ui.note" role="status"></p>
+  <p class="note err" x-show="$store.studio.budget.error" x-text="$store.studio.budget.error" role="status"></p>
+
+  <aside class="guide" x-show="$store.studio.ui.guideOpen" aria-label="Guide">
+    <div class="guide-head"><b>Guide</b>
+      <button type="button" class="btn" @click="$store.studio.toggleGuide()">Close</button></div>
+    <div class="guide-body small">The guide appears here.</div>
+  </aside>
+
+  <main class="wrap">
+    <div id="builder">
+      <div class="sec"><h4>Builder</h4>
+        <div class="hint">Builder sections appear here.</div></div>
+    </div>
+    <div class="sum">
+      <div class="card">
+        <div class="prev"><span class="small">Sketch preview appears here</span></div>
+        <b>Your image</b>
+        <p class="small">Summary and cost appear here.</p>
+      </div>
+      <div class="card jobs-card">
+        <b>Your jobs</b>
+        <p class="small">Jobs appear here.</p>
+      </div>
+    </div>
+  </main>
+</div>
 </body>
 </html>

@@ -339,3 +339,34 @@ def test_preview_warnings_name_files_without_folders(client, monkeypatch):
     # warnings without a path are unchanged
     assert [w for w in warnings if w.startswith("catalogue ")] == [
         w for w in real(build_spec(OAKMERE)).warnings if w.startswith("catalogue ")]
+
+
+# --- page shell (task 4) ---------------------------------------------------------------------
+STATIC = Path(app_mod.STATIC_DIR)
+
+
+def test_static_app_js_served_as_javascript(client):
+    r = client.get("/static/app.js")
+    assert r.status_code == 200
+    assert "javascript" in r.headers["content-type"]
+    assert client.get("/static/styles.css").status_code == 200
+
+
+def test_vendor_versions_are_exact_pins_with_files(client):
+    import re
+    lines = [ln for ln in (STATIC / "vendor" / "VERSIONS.txt").read_text().splitlines() if ln.strip()]
+    assert lines and all(re.fullmatch(r"[a-z0-9.-]+==\d+\.\d+\.\d+", ln) for ln in lines)
+    for ln in lines:
+        name, version = ln.split("==")
+        assert (STATIC / "vendor" / f"{name}-{version}.min.js").is_file()
+        assert client.get(f"/static/vendor/{name}-{version}.min.js").status_code == 200
+
+
+def test_index_loads_only_local_assets(client):
+    import re
+    html = client.get("/").text
+    refs = re.findall(r'(?:src|href)="([^"]+)"', html)
+    assert refs
+    assert all(r.startswith(("/static/", "#")) for r in refs), refs
+    assert "http" not in html.lower().replace("http-equiv", "")
+    assert not re.search(r"\b(alert|confirm|prompt)\(", (STATIC / "app.js").read_text())

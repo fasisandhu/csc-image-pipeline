@@ -12,7 +12,7 @@ import re
 import time
 from contextlib import aclosing
 from pathlib import Path
-from typing import Sequence
+from typing import Callable, Sequence
 
 from claude_agent_sdk import ClaudeAgentOptions, HookMatcher, ResultMessage, query
 
@@ -79,6 +79,22 @@ def read_gate(images: Sequence[Path], cwd: Path):
 
 def _cost(result: ResultMessage | None) -> float:
     return float(getattr(result, "total_cost_usd", None) or 0.0)
+
+
+def _failure(e: Exception, cost: float) -> BrainError:
+    """An SDK run that raised, as a BrainError keeping what it was billed (a ResultError carries the total)."""
+    if not cost and isinstance(getattr(e, "data", None), dict):
+        cost = float(e.data.get("total_cost_usd") or 0.0)
+    return BrainError(f"claude: {type(e).__name__}: {e}", cost_usd=cost)
+
+
+def _outcome(result: ResultMessage | None) -> tuple[dict | None, str, float]:
+    """(structured_output, result text, total_cost_usd) of a finished run; an error result is a BrainError."""
+    if result is None:
+        raise BrainError("claude: no result message")
+    if result.is_error:
+        raise BrainError(f"claude: {result.subtype}: {(result.result or '')[:200]}", cost_usd=_cost(result))
+    return result.structured_output, result.result or "", _cost(result)
 
 
 class ClaudeBrain:
@@ -161,18 +177,10 @@ class ClaudeBrain:
                         if isinstance(m, ResultMessage):
                             result = m
             except Exception as e:  # noqa: BLE001 - keep what a failed run was billed (ResultError carries it)
-                cost = _cost(result)
-                if not cost and isinstance(getattr(e, "data", None), dict):
-                    cost = float(e.data.get("total_cost_usd") or 0.0)
-                raise BrainError(f"claude: {type(e).__name__}: {e}", cost_usd=cost) from None
+                raise _failure(e, _cost(result)) from None
             return result
 
-        result = asyncio.run(asyncio.wait_for(ask(), TIMEOUT_S))
-        if result is None:
-            raise BrainError("claude: no result message")
-        if result.is_error:
-            raise BrainError(f"claude: {result.subtype}: {(result.result or '')[:200]}", cost_usd=_cost(result))
-        return result.structured_output, result.result or "", _cost(result)
+        return _outcome(asyncio.run(asyncio.wait_for(ask(), TIMEOUT_S)))
 
     def _costs(self, total: float) -> tuple[float, dict]:
         """(billed cost_usd, extra record fields). Subscription use is not billed; keep its usage equivalent."""
@@ -183,15 +191,27 @@ class ClaudeBrain:
     def ask_json(self, task: str, prompt: str, schema: dict, images: Sequence[Path] = (),
                  user: str = "owner", *, fallback: bool = False) -> BrainResult:
         """Synchronous; never call from inside a running event loop (see _run)."""
+        self._check_caller(user)
+        return self._answer(task, fallback, lambda env: self._run(prompt, env, images, schema))
+
+    def _check_caller(self, user: str) -> None:
+        """A brain answers only for the user whose credential it holds, and only from plain def code."""
+        name = type(self).__name__
         if user != self.user:
-            raise ValueError(f"this ClaudeBrain holds {self.user!r}'s credential, not {user!r}'s")
+            raise ValueError(f"this {name} holds {self.user!r}'s credential, not {user!r}'s")
         try:
             asyncio.get_running_loop()
         except RuntimeError:
-            pass
-        else:
-            raise RuntimeError("ClaudeBrain.ask_json is synchronous; call it from plain def code, not an event loop")
+            return
+        raise RuntimeError(f"{name}.ask_json is synchronous; call it from plain def code, not an event loop")
 
+    def _answer(self, task: str, fallback: bool,
+                run: Callable[[dict], tuple[dict | None, str, float]]) -> BrainResult:
+        """One brain call around `run(env)` -> (structured_output, result text, cost of this call).
+
+        Checks the API-key cap first, builds the per-call env, reads the JSON answer, records the call
+        (cost split by credential) and raises every failure as a scrubbed BrainError, recorded with its cost.
+        """
         base = {"event": "brain", "user": self.user, "task": task, "provider": "claude", "model": self.model,
                 "credential": self.credential, "fallback": fallback}
         if self.credential == "api_key":
@@ -209,7 +229,7 @@ class ClaudeBrain:
             secrets = list(env.values())
             token = _TASK.set(task)
             try:
-                structured, text, total = self._run(prompt, env, images, schema)
+                structured, text, total = run(env)
             finally:
                 _TASK.reset(token)
             data = structured if isinstance(structured, dict) else first_json_object(text)

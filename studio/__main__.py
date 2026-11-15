@@ -15,6 +15,7 @@ from pipeline.compile import ROOT
 
 from . import db
 from .app import app
+from .brain import warm
 from .worker import Worker
 
 HOST, PORT = "127.0.0.1", 8765
@@ -55,7 +56,10 @@ def main(port: int = PORT) -> int:
             print(f"{n} job(s) were running when the server stopped; marked interrupted, not re-run")
         Worker(db.connect).start()
         print(f"CSC Studio on http://{HOST}:{sock.getsockname()[1]} (Ctrl+C to stop)")  # uvicorn skips its own line for passed sockets
-        serve(sock)
+        try:
+            serve(sock)
+        finally:
+            warm.shutdown()  # close the warm Claude sessions and their Claude processes
     return 0
 
 

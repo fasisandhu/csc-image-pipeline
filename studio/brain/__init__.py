@@ -3,6 +3,9 @@
     brain = get_brain("owner", fast=True)
     result = brain.ask_json("read_brief", prompt, schema, user="owner")   # -> BrainResult
 
+Quick tasks (fast=True) go to a warm Claude session per user (warm.WarmClaude); other tasks open one
+Claude query per call (ClaudeBrain).
+
 Env (names in .env.example): STUDIO_<USER>_CLAUDE = subscription | api_key | none (unset = none),
 STUDIO_<USER>_CLAUDE_OAUTH_TOKEN (blank = the owner's logged-in Claude Code session),
 STUDIO_<USER>_ANTHROPIC_API_KEY, STUDIO_<USER>_CLAUDE_CAP_USD (default 5), STUDIO_FAST_TASKS = claude | gemini.
@@ -16,8 +19,9 @@ from typing import Sequence
 from .base import Brain, BrainError, BrainResult, env_prefix
 from .claude import ClaudeBrain
 from .gemini import GeminiBrain
+from .warm import WarmClaude
 
-__all__ = ["Brain", "BrainError", "BrainResult", "ClaudeBrain", "FallbackBrain", "GeminiBrain",
+__all__ = ["Brain", "BrainError", "BrainResult", "ClaudeBrain", "FallbackBrain", "GeminiBrain", "WarmClaude",
            "credential_for", "get_brain"]
 
 
@@ -54,9 +58,14 @@ def credential_for(user: str) -> tuple[str, str | None]:
 
 
 def get_brain(user: str, fast: bool = False) -> Brain:
-    """Claude with Gemini fallback, or Gemini alone when the user has no Claude or fast tasks go to Gemini."""
+    """Claude with Gemini fallback, or Gemini alone when the user has no Claude or fast tasks go to Gemini.
+
+    Fast tasks with STUDIO_FAST_TASKS=claude (the default) use the user's warm Claude session.
+    """
     kind, token_env = credential_for(user)
-    fast_gemini = fast and (os.environ.get("STUDIO_FAST_TASKS") or "claude").strip().lower() == "gemini"
-    if kind == "none" or fast_gemini:
+    fast_mode = (os.environ.get("STUDIO_FAST_TASKS") or "claude").strip().lower()
+    if kind == "none" or (fast and fast_mode == "gemini"):
         return GeminiBrain()
+    if fast and fast_mode == "claude":
+        return FallbackBrain(WarmClaude(user, kind, token_env), GeminiBrain())
     return FallbackBrain(ClaudeBrain(user, kind, token_env), GeminiBrain())

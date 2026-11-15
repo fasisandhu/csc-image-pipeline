@@ -187,6 +187,8 @@ def test_review_and_approve_page_renders():
     assert f"up to {COLOUR_CORRECTIONS_PER_RENDER} times per image" in page
     for s in UI_WORDS:
         assert f"**{s}" in page, s  # each button, state and heading it names, in bold as the guide marks them
+    # the rule scopes the server offers (studio.library.scope_options): the kinds of image, or one style
+    assert "all images, packshots, on-model, or one style" in page
 
 
 def test_review_and_approve_numbers_come_from_the_rule_files(monkeypatch):
@@ -231,5 +233,5 @@ def test_tour_ends_on_the_review_tab_while_it_is_live():
     assert "{ id: 'review', label: 'Review' }," in tabs  # live today: not "later", not dimmed
     avail = re.search(r"function tourAvailable\(i\) \{(.*?)\n  \}", js, re.S).group(1)
     assert "tabLive(" in avail  # a stop on a tab is skipped while that tab is not live
-    live = re.search(r"function tabLive\(id\) \{(.*?)\n  \}", js, re.S).group(1)
+    live = re.search(r"function tabLive\(id\) \{([^\n]*)\}\n", js).group(1)  # a one-line function
     assert "later" in live and "dim" in live

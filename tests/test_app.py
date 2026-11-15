@@ -309,13 +309,50 @@ def test_brief_endpoint(client, monkeypatch):
     assert r.json()["answers"] == {"gsm": 450, "colour": "olive"} and seen == [("owner", True)]
 
 
-def test_brief_brain_error_is_503(client, monkeypatch):
+LEAKS = ("STUDIO_", "api_key", "API-key", "subscription", ":\\", "/Users/", "GEMINI_API_KEY", "brand/")
+
+
+@pytest.mark.parametrize("detail", [
+    "claude: offline | then gemini: offline",
+    "claude: owner's API-key spend $5.00 this month reached the $5.00 cap | then gemini: GEMINI_API_KEY not set",
+    "claude: STUDIO_OWNER_ANTHROPIC_API_KEY is not set | then gemini: offline",
+    "claude: ClaudeSDKError: CLI not found at C:\\Users\\me\\AppData\\claude.exe (subscription) | then gemini: x",
+    "claude: ProcessError: /Users/me/.claude/cli.js exited 1 | then gemini: offline",
+])
+def test_brief_brain_error_is_503_with_a_fixed_message(client, monkeypatch, detail):
+    """The brain's detail stays in out/log.jsonl: the browser gets one fixed plain message (final review I2)."""
     class Broken:
         def ask_json(self, *a, **k):
-            raise BrainError("claude: offline | then gemini: offline")
+            raise BrainError(detail)
     monkeypatch.setattr(app_mod, "get_brain", lambda user, fast=False: Broken())
     r = client.post("/api/brief", json={"text": "olive hoodie", "answers": {}})
-    assert r.status_code == 503 and r.json() == {"error": "claude: offline | then gemini: offline"}
+    assert r.status_code == 503 and r.json() == {"error": "Our AI helpers are busy right now; pick the options below."}
+    assert not any(x in r.text for x in LEAKS), r.text
+
+
+def test_provider_error_is_503_with_a_fixed_message(client, monkeypatch):
+    from pipeline.providers import ProviderError
+
+    def broken(*a, **k):
+        raise ProviderError("gemini: GEMINI_API_KEY not set")
+    monkeypatch.setattr(app_mod, "estimate", broken)
+    for url in ("/api/preview", "/api/jobs"):
+        r = client.post(url, json={"answers": OAKMERE})
+        assert r.status_code == 503 and r.json() == {"error": app_mod.SERVICE_DOWN}, url
+        assert not any(x in r.text for x in LEAKS), r.text
+    assert job_count() == 0
+
+
+def test_unprocessable_messages_name_files_without_folders(client, monkeypatch):
+    """A 422 from the compiler or the answer check never carries a repo path (final review I2)."""
+    with monkeypatch.context() as m:
+        m.setattr(app_mod, "valid_value", lambda *a, **k: True)  # let an unknown colour reach build_spec
+        for url in ("/api/preview", "/api/jobs"):
+            r = client.post(url, json={"answers": {**OAKMERE, "colour": "nope"}})
+            assert r.status_code == 422 and "not in palette.json" in r.json()["error"], (url, r.text)
+            assert "brand/" not in r.text and "brand\\" not in r.text
+    r = client.post("/api/preview", json={"answers": {**OAKMERE, "x/brand/designs/y": "z"}})
+    assert r.status_code == 422 and r.json() == {"error": "invalid answer for y"}
 
 
 @pytest.fixture

@@ -7,6 +7,7 @@ time, so the pipeline keeps enforcing every budget rule.
 """
 from __future__ import annotations
 
+import logging
 import re
 from contextlib import closing
 from dataclasses import asdict
@@ -39,7 +40,10 @@ ANCHOR_FIRST = ("This colour has no approved reference packshot yet. "
                 "Make it first, then this shot can use it.")
 PICK_A_SKETCH = "pick a sketch from this shot"
 NO_SKETCH = "Reference packshots are made without a sketch, so the garment comes only from our catalogue."
+BRAIN_BUSY = "Our AI helpers are busy right now; pick the options below."
+SERVICE_DOWN = "The image service is not available right now; try again in a moment."
 FOLDERS = re.compile(r"(?:[\w.:~-]*[/\\])+(?=[\w.~-])")  # the folder part of a path, "/" or "\"
+log = logging.getLogger(__name__)
 
 app = FastAPI(title="CSC Studio", dependencies=[Depends(current_user)])
 # DNS-rebinding guard: a page on another domain that resolves to 127.0.0.1 is refused.
@@ -195,16 +199,23 @@ def estimate(spec: dict, kind: str = "final", layout_refs: list[str] = ()) -> di
 
 
 # --- errors ----------------------------------------------------------------------------------
+# A 503 body is fixed text: a brain or provider message can name a credential type, a variable or a CLI
+# path, none of which may reach the browser (final review I2).
 @app.exception_handler(BadAnswers)
 @app.exception_handler(CompileError)
 async def _unprocessable(request, e: Exception):
-    return JSONResponse({"error": str(e)}, 422)
+    return JSONResponse({"error": file_names_only(str(e))}, 422)
 
 
 @app.exception_handler(BrainError)
+async def _brain_unavailable(request, e: Exception):  # each brain recorded its own failure in out/log.jsonl
+    return JSONResponse({"error": BRAIN_BUSY}, 503)
+
+
 @app.exception_handler(ProviderError)
-async def _unavailable(request, e: Exception):  # messages carry no credential values
-    return JSONResponse({"error": str(e)}, 503)
+async def _provider_unavailable(request, e: Exception):
+    log.warning("%s: %s", request.url.path, e)  # for the server's console only; messages carry no key values
+    return JSONResponse({"error": SERVICE_DOWN}, 503)
 
 
 # --- endpoints -------------------------------------------------------------------------------

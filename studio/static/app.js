@@ -89,6 +89,7 @@
   let questionsTimer = null, questionsSeq = 0, questionsOpen = 0;
   let previewTimer = null, previewSeq = 0, previewOpen = 0;
   let wordsReveal = false;  // the next questions reply shows sections opened by "Fill from my words"
+  const edits = {};  // section id -> how often the person set it: a brief reply never overrides a newer edit
 
   // --- store ----------------------------------------------------------------------------------
   function createStudio() {
@@ -241,9 +242,11 @@
       tipOpen(s) { return !!this.builder.tips[s.id]; },
 
       // --- builder: answers -----------------------------------------------------------------
-      setAnswer(id, value) {
+      setAnswer(id, value) {  // every pick, custom colour edit and size change by the person comes here
         if (value === null || value === undefined) delete this.answers[id];
         else this.answers[id] = value;
+        edits[id] = (edits[id] || 0) + 1;
+        delete this.brief.owned[id];  // the person's own answer now: sent with the next words, and kept
         this.builder.fresh = this.builder.fresh.filter(x => x !== id);
         this.saveDraft();
         this.askQuestions();
@@ -359,9 +362,9 @@
         const text = b.text.trim().slice(0, MAX_BRIEF);
         if (!text || b.busy) return;
         Object.assign(b, { busy: true, error: '', done: false, picked: {}, hint: '', provider: '', fallback: false });
-        const before = clone(this.answers);  // to leave alone anything the person changes meanwhile
+        const before = clone(this.answers), seen = { ...edits };  // to leave alone what the person changes meanwhile
         // The server keeps every answer it is sent, so only the person's own picks of visible sections go:
-        // hidden sections' old answers and earlier words' picks (still unchanged) can be replaced by new words.
+        // hidden sections' old answers and earlier words' picks the person never set can be replaced by new words.
         const sent = {}, live = clone(this.liveAnswers());
         for (const k of Object.keys(live)) {
           if (!(k in b.owned && same(live[k], b.owned[k]))) sent[k] = live[k];
@@ -383,13 +386,15 @@
           b.error = res.status === 503 ? NOTES.briefBusy : NOTES.briefFailed;
           return;
         }
-        this.applyBrief(data, sent, before);
+        this.applyBrief(data, sent, before, seen);
       },
-      applyBrief(data, sent, before) {
+      applyBrief(data, sent, before, seen) {
         const b = this.brief, got = plainObject(data.answers);
+        const untouched = k => edits[k] === seen[k] && same(this.answers[k], before[k]);  // not set during the request
         for (const k of Object.keys(got)) {
-          if (same(got[k], sent[k])) continue;  // not new: the person had it already
-          if (!same(this.answers[k], before[k])) continue;  // changed by the person while the words were read
+          if (same(got[k], sent[k])) continue;  // the person's own answer, sent and kept
+          if (!untouched(k)) continue;  // set by the person while the words were read
+          if (same(got[k], this.answers[k])) continue;  // the same as already there: no change, no chip
           this.answers[k] = got[k];
           b.picked[k] = got[k];
           b.owned[k] = got[k];
@@ -398,8 +403,8 @@
         if ('colour' in b.picked) Object.assign(this.builder.custom, { open: false, hint: '' });
         const hint = typeof data.colour_hint === 'string' ? data.colour_hint.trim().slice(0, MAX_COLOUR_NAME) : '';
         // a colour outside the samples: open Custom with its name and an empty hex (never a guessed one),
-        // unless the person has their own colour or changed it while the words were read
-        if (hint && !('colour' in sent) && same(this.answers.colour, before.colour)) {
+        // unless the person has their own colour or set it while the words were read
+        if (hint && !('colour' in sent) && untouched('colour')) {
           Object.assign(this.builder.custom, { open: true, name: hint, hex: '', hint });
           b.hint = hint;
           this.applyCustom();  // no valid hex yet: any colour from earlier words is cleared

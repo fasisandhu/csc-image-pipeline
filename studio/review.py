@@ -33,9 +33,10 @@ def _template(text: str) -> re.Pattern:
 
 def _items() -> dict[str, re.Pattern]:
     """brand/qa_checklist.json's items as patterns, by id. Raises ValueError when an id this engine relies on is gone:
-    a renamed id would quietly hand the face to the AI to judge."""
+    a renamed id would quietly hand a measured line (the colour hex, whose false fault buys a new image) or the face
+    to the AI to judge."""
     items = {i["id"]: _template(i["text"]) for i in load_json("brand/qa_checklist.json")["items"]}
-    gone = [i for i in (FACE,) if i not in items]
+    gone = [i for i in (*MEASURED, FACE) if i not in items]
     if gone:
         raise ValueError(f"brand/qa_checklist.json has no item with id {', '.join(gone)}; the checks cannot run")
     return items
@@ -44,7 +45,7 @@ def _items() -> dict[str, re.Pattern]:
 def visual_checklist(shot_id: str, skip: tuple[str, ...] = ()) -> list[str]:
     """The shot's checklist without the lines a script measures, nor the items whose ids are in `skip`."""
     items = _items()
-    left_out = [items[i] for i in (*MEASURED, *skip) if i in items]
+    left_out = [items[i] for i in (*MEASURED, *skip)]
     return [line for line in qa.checklist(shot_id) if not any(m.fullmatch(line) for m in left_out)]
 
 

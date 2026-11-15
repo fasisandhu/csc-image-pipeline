@@ -4,7 +4,7 @@
 - Gemini spend is capped at ${{budget.cap_usd}} a month.
 - Studio asks before anything over ${{budget.ask_over_usd}}. Either of the two users can confirm.
 - Up to {{limits.repairs_per_render}} repairs and {{limits.regenerations_per_shot}} remakes, then a person decides.
-- Logos get one repair. If it still fails, the real artwork is placed on the garment.
+- Logos get one repair. If it still fails, the real artwork is placed on the garment, for a front packshot with a chest logo; otherwise a person decides.
 - Every AI image carries its caption.
 - Keys stay on the host PC.
 - Nothing is sent or published automatically.

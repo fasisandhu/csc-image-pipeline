@@ -12,7 +12,7 @@ Choices already made fold away to one line; press **Change** to edit one. The qu
 
 ## 3. Check "Your image" and the cost
 
-The **Your image** card lists every choice and the estimated cost, plus the most it could cost if every allowed fix runs. Open **Show the full prompt** to read exactly what the pipeline wrote for the image model.
+The **Your image** card lists every choice and the estimated cost. Under it is the most it could cost if every allowed fix runs: about that amount at most, plus a few cents for the checks. Open **Show the full prompt** to read exactly what the pipeline wrote for the image model.
 
 ## 4. Optional: see {{sketches.count}} free sketches
 

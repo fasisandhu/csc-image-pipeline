@@ -11,17 +11,17 @@ As soon as an image is made, Studio checks it:
 - **Logo:** its text, shape, colours and size, when the image has a design.
 - **Garment details:** an AI looks at the drawcords, cuffs and hem, shoulder seams, pocket, hood, drape and, on a model, the hands. It checks the face only once that model has an approved reference photo.
 
-The results show beside the image: ✓ passed, ✗ a problem, ↻ being fixed, ? please look. A box on the image marks where a check found something. Read the checks explains each one.
+The results show beside the image: ✓ passed, ✗ a problem, ↻ fixed automatically, ? please look. A box on the image marks where the logo check found the logo. Read the checks explains each one.
 
 ## 2. Fixes run by themselves, within limits
 
 - **Colour a little off:** corrected for free, up to {{limits.colour_corrections_per_render}} times per image.
 - **A detail wrong** (drawcords, cuffs, pocket, hood, hands, stray text): repaired one change at a time, up to {{limits.repairs_per_render}} repairs per image. After that, Studio makes a new image.
 - **Something a repair can't fix** (colour far off, fabric too thin for its weight, framing): a new image, up to {{limits.regenerations_per_shot}} new images per shot.
-- **Logo wrong:** one repair. If it still fails, the real artwork is placed on the approved reference packshot (front packshots only); otherwise it waits for you.
+- **Logo wrong:** one repair. If it still fails, the real artwork is placed on the approved reference packshot, but only for a front packshot with a chest logo; otherwise it waits for you.
 - **Face:** until the model has an approved reference photo, Studio cannot check the face. Its line shows ? Not checked, any other fixes still run, and then the image waits for you to look at the face. Until then, Studio never makes a new image because of the face.
 
-Every fix is checked again. The card shows the spend so far and the repairs and new images left. Open **Show what ran automatically** to see each step and its cost. The most it could cost was shown before **Approve & create**.
+Every fix is checked again. The card shows the spend so far and the repairs and new images left. Open **Show what ran automatically** to see each step and its cost. Before **Approve & create**, the cost card showed the most it could cost: about that amount at most, plus a few cents for the checks.
 
 When the limits are used up, or a check or fix fails, Studio stops. Nothing is retried, and the image shows **Needs a person** with the reason.
 
@@ -29,11 +29,11 @@ When the limits are used up, or a check or fix fails, Studio stops. Nothing is r
 
 Click an image in the list to open it. Use the small pictures under it to compare before and after.
 
-- **Approve:** the image goes to the Library, ready to export. If it needs a person, write a short note saying why it is fine.
+- **Approve:** the image goes to the Library, ready to export. If it needs a person, write a short note saying why it is fine. An image whose logo did not pass its check cannot be approved or exported, with or without a note: ask for a change, or reject it.
 - **Ask for a change:** pick one thing to fix. Studio repairs this image once, as a paid edit, and checks it again. It counts toward the repairs left.
 - **Change my choices:** opens Create image with this image's choices, to make a new one.
 - **Reject with a note:** say what is wrong. The image is rejected and your note becomes a draft rule (step 5).
-- **Run the checks:** for an older image that was never checked, or one that needs a person. No new image is made.
+- **Run the checks:** for an older image that was never checked, or one that needs a person. The button shows only while the image is still waiting among the finished images, not once the checks have set it aside. The checks make a few small AI calls. If the checks find a fault, the automatic fixes run within this shot's limits, as when it was made.
 
 ## 4. Reference packshots
 
@@ -57,7 +57,7 @@ A rule never switches on by itself.
 
 Approved images are in the **Library** tab. Filter by style, colour, technique, placement, model, or packshot and on-model. Click one to see its record and the full prompt.
 
-- **Export for the website** saves WebP files in up to three web sizes on this PC, with the alt text and caption to copy. It is free (no AI call) and publishes nothing.
+- **Export for the website** saves WebP files in up to {{export.web_sizes}} web sizes ({{export.web_widths}} pixels wide, never wider than the image) on this PC, with the alt text and caption to copy. It is free (no AI call) and publishes nothing.
 - **Approval PDF**, for client mockups only: a one-page sheet for the client to sign.
 
 Every exported image keeps its caption (see Start here).

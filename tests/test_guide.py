@@ -235,3 +235,55 @@ def test_tour_ends_on_the_review_tab_while_it_is_live():
     assert "tabLive(" in avail  # a stop on a tab is skipped while that tab is not live
     live = re.search(r"function tabLive\(id\) \{([^\n]*)\}\n", js).group(1)  # a one-line function
     assert "later" in live and "dim" in live
+
+
+# --- final fix wave: the guide and the page say what really happens ------------------------------
+FIXES_MAY_FOLLOW = "If the checks find a fault, the automatic fixes run within this shot's limits, as when it was made."
+
+
+def test_run_the_checks_says_fixes_may_follow():
+    """Minor 5: a check that finds a fault queues the usual (paid) fixes, so nothing says "no new image is made"."""
+    js, page = static_text("app.js"), guide.render("review-and-approve")
+    doc = " ".join(app_mod.recheck.__doc__.split())
+    for where, text in (("app.js", js), ("guide", page), ("docstring", doc)):
+        assert FIXES_MAY_FOLLOW in text, where
+        assert "No new image is made" not in text and "no new image is made" not in text, where
+    line = next(x for x in page.splitlines() if x.startswith("- **Run the checks"))
+    assert "only while the image is still waiting among the finished images" in line  # library.in_finals
+
+
+def test_worst_case_is_worded_plainly():
+    """Minor 4: the worst case leaves out the checks' few cents, and says so."""
+    js = static_text("app.js")
+    assert "about ' + money(this.preview.worst_usd) + ' at most, plus a few cents for the checks'" in js
+    for p in ("review-and-approve", "make-a-website-image"):
+        assert "at most, plus a few cents for the checks" in guide.render(p), p
+    assert "The most it could cost was shown" not in guide.render("review-and-approve")
+
+
+def test_review_guide_matches_the_page():
+    """T7: the marks, the boxes and the logo placement read as the page and the chain behave."""
+    page, rules, js = guide.render("review-and-approve"), guide.render("rules"), static_text("app.js")
+    assert "↻ fixed automatically" in page and "being fixed" not in page
+    assert "'Fixed automatically · compare before and after'" in js  # the page's own words for ↻
+    assert "A box on the image marks where the logo check found the logo." in page
+    assert "where a check found something" not in page
+    assert "reviewBoxes(it) {  // the logo boxes the check found" in js  # boxes are drawn for logos only
+    for text in (page, rules):
+        assert "front packshot with a chest logo" in text  # worker.front_packshot
+    # the logo gate (library.logo_cleared): no note gets a failed logo approved
+    assert "logo did not pass its check cannot be approved or exported, with or without a note" in page
+    # the face line (review.run_checks): left to a person while the model has no reference photo
+    assert "Studio cannot check the face. Its line shows ? Not checked" in page
+
+
+def test_web_sizes_follow_the_export_widths(monkeypatch):
+    """T7: the number and widths of the web sizes come from finish.WEBP_WIDTHS, never typed into the guide."""
+    from pipeline import finish
+
+    widths = finish.WEBP_WIDTHS
+    page = guide.render("review-and-approve")
+    listed = ", ".join(map(str, widths[:-1])) + " and " + str(widths[-1])
+    assert f"up to {len(widths)} web sizes ({listed} pixels wide" in page and "three" not in page
+    monkeypatch.setattr(finish, "WEBP_WIDTHS", (1200, 600))
+    assert "up to 2 web sizes (1200 and 600 pixels wide" in guide.render("review-and-approve")

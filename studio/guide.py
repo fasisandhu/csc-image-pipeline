@@ -5,7 +5,7 @@ from __future__ import annotations
 import re
 from pathlib import Path
 
-from pipeline import ledger
+from pipeline import finish, ledger
 from pipeline.compile import load_json
 
 from .worker import COLOUR_CORRECTIONS_PER_RENDER, DRAFTS
@@ -17,6 +17,12 @@ PAGES = ("start-here", "make-a-website-image", "review-and-approve", "read-the-c
 
 def _num(x: float) -> str:
     return str(int(x)) if float(x) == int(x) else str(x)
+
+
+def _listed(items) -> str:
+    """(1600, 800, 400) -> "1600, 800 and 400"."""
+    items = [str(i) for i in items]
+    return items[0] if len(items) == 1 else ", ".join(items[:-1]) + " and " + items[-1]
 
 
 def values() -> dict[str, str]:
@@ -32,6 +38,8 @@ def values() -> dict[str, str]:
         "budget.cap_usd": f"{ledger.GEMINI_MONTHLY_CAP_USD:.2f}",
         "budget.ask_over_usd": f"{ledger.RUN_APPROVAL_USD:.2f}",
         "sketches.count": _num(DRAFTS),
+        "export.web_sizes": _num(len(finish.WEBP_WIDTHS)),  # the web export's widths, as finish.export makes them
+        "export.web_widths": _listed(finish.WEBP_WIDTHS),
     }
 
 

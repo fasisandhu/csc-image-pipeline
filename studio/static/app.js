@@ -171,7 +171,7 @@
     replace: 'A reference packshot already exists for this colour. Replace it?',
     builder: 'These are that image’s choices. Change what you like, then make it again.',
     anchorHint: 'Later shots in this colour copy it as the exact garment.',
-    checkHint: 'No new image is made; the checks make a few small AI calls.',
+    checkHint: "The checks make a few small AI calls. If the checks find a fault, the automatic fixes run within this shot's limits, as when it was made.",
     decided: 'This image is decided. Change your choices to make a new one.',
     running: 'A check or fix is running on this image; wait for it to finish.',
     noRepairs: 'No repairs are left on this image. Change your choices to make a new one.',
@@ -1080,7 +1080,9 @@
         window.Alpine.nextTick(() => this.focusChoice(id, 'start'));
       },
       costText() { return this.preview ? money(this.preview.base_usd) : ''; },
-      worstText() { return this.preview ? 'up to ' + money(this.preview.worst_usd) + ' if every allowed fix runs' : ''; },
+      worstText() {  // the image and every allowed fix; the checks' own small calls are not in the figure
+        return this.preview ? 'If every allowed fix runs: about ' + money(this.preview.worst_usd) + ' at most, plus a few cents for the checks' : '';
+      },
       tierNote() {  // from the router's tier; nothing is shown if the preview has none
         const p = this.preview;
         const name = p && { premium: 'Premium model', standard: 'Standard model' }[p.tier];

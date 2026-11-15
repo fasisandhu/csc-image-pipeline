@@ -601,8 +601,9 @@ def change(job_id: int, body: ChangeIn):
 
 @app.post("/api/reviews/{job_id}/check")
 def recheck(job_id: int):
-    """Run the checks on a final never checked (from before the review chain) or one that needs a person. No new
-    image is made; the checks' own small calls are logged as usual."""
+    """Run the checks on a final never checked (from before the review chain) or one that needs a person, while its
+    latest image is still in out/finals. The checks' own small calls are logged as usual. If the checks find a fault,
+    the automatic fixes run within this shot's limits, as when it was made."""
     with closing(db.connect()) as conn:
         job = _final(conn, job_id)
         if job is None:

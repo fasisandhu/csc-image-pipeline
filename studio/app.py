@@ -7,6 +7,7 @@ time, so the pipeline keeps enforcing every budget rule.
 """
 from __future__ import annotations
 
+import re
 from contextlib import closing
 from dataclasses import asdict
 from pathlib import Path, PurePosixPath
@@ -37,6 +38,7 @@ MAX_JOBS = 100  # most jobs one list request returns
 ANCHOR_FIRST = ("This colour has no approved reference packshot yet. "
                 "Make it first, then this shot can use it.")
 PICK_A_SKETCH = "pick a sketch from this shot"
+FOLDERS = re.compile(r"(?:[\w.:~-]*[/\\])+(?=[\w.~-])")  # the folder part of a path, "/" or "\"
 
 app = FastAPI(title="CSC Studio", dependencies=[Depends(current_user)])
 # DNS-rebinding guard: a page on another domain that resolves to 127.0.0.1 is refused.
@@ -132,6 +134,21 @@ def picked_sketch(user: str, kind: str, layout: str, shot_id: str) -> str | None
     return next((f for f in files if PurePosixPath(f).as_posix() == want), None)
 
 
+def file_names_only(text: str) -> str:
+    """Browser-facing text names a file but never its folder: "brand/designs/x_ref.png" -> "x_ref.png"."""
+    return FOLDERS.sub("", text)
+
+
+def public_job(job: dict) -> dict:
+    """A job as the browser gets it. The spec stays in the database (it holds repo paths such as
+    refs/anchors/ and brand/designs/); its shot id comes instead, and the error loses its folders."""
+    out = {k: v for k, v in job.items() if k != "spec"}
+    out["shot_id"] = ((job.get("spec") or {}).get("shot") or {}).get("shot_id")
+    if out.get("error"):
+        out["error"] = file_names_only(out["error"])
+    return out
+
+
 def servable(path: str) -> Path | None:
     """The image at repo-relative `path` if the browser may have it, else None: a plain relative "/" path
     with no "..", that resolves to a file under out/drafts or out/finals with an image suffix."""
@@ -204,7 +221,8 @@ def preview(body: AnswersIn):
     spec = build_spec(answers)
     c = compile_spec(spec)
     est = estimate(spec)
-    return {"shot_id": c.shot_id, "prompt": c.prompts["paragraph"], "warnings": c.warnings,
+    return {"shot_id": c.shot_id, "prompt": c.prompts["paragraph"],
+            "warnings": [file_names_only(w) for w in c.warnings],
             **{k: est[k] for k in ("base_usd", "worst_usd", "action", "reason")},
             "needs_anchor": needs_anchor(answers)}
 
@@ -236,7 +254,7 @@ def create_job(body: JobIn, user: str = Depends(current_user)):
 @app.get("/api/jobs")
 def list_jobs(limit: int = 20, user: str = Depends(current_user)):
     with closing(db.connect()) as conn:
-        return {"jobs": db.list_jobs(conn, user, max(1, min(limit, MAX_JOBS)))}
+        return {"jobs": [public_job(j) for j in db.list_jobs(conn, user, max(1, min(limit, MAX_JOBS)))]}
 
 
 @app.get("/api/files/{path:path}")
@@ -252,7 +270,7 @@ def get_file(path: str):
 def get_job(job_id: int):
     with closing(db.connect()) as conn:
         job = db.get_job(conn, job_id)
-    return job if job is not None else JSONResponse({"error": f"job {job_id} not found"}, 404)
+    return public_job(job) if job is not None else JSONResponse({"error": f"job {job_id} not found"}, 404)
 
 
 @app.get("/api/guide/{page:path}")

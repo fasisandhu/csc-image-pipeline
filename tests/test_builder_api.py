@@ -293,3 +293,49 @@ def test_cap_still_refuses_with_layout(client, monkeypatch):
     r = client.post("/api/jobs", json={"answers": OAKMERE, "kind": "final", "layout": "out/drafts/a1.png",
                                        "confirm": True})
     assert r.status_code == 409 and "monthly cap" in r.json()["error"] and job_count() == 1
+
+
+# --- fix round 1: no repo paths outside out/drafts and out/finals reach the browser ------------
+def test_job_dicts_carry_shot_id_not_repo_paths(client):
+    shot_id = client.post("/api/preview", json={"answers": OAKMERE}).json()["shot_id"]
+    r = client.post("/api/jobs", json={"answers": OAKMERE, "kind": "final"})
+    assert r.status_code == 201
+    jid = r.json()["id"]
+    spec = get_job(jid)["spec"]  # the database keeps the full spec for the worker
+    assert spec["set"]["reference_images"][0]["path"].startswith("refs/anchors/")
+    assert spec["shot"]["decoration"][0]["artwork"].startswith("brand/")
+    one, listed = client.get(f"/api/jobs/{jid}"), client.get("/api/jobs")
+    for body in (one.text, listed.text):
+        assert "refs/" not in body and "brand/" not in body
+    assert "spec" not in one.json() and one.json()["shot_id"] == shot_id
+    assert listed.json()["jobs"] == [one.json()]
+
+
+def test_job_error_names_files_without_folders(client):
+    jid = client.post("/api/jobs", json={"answers": OAKMERE}).json()["id"]
+
+    def missing_ref(c, r):
+        raise FileNotFoundError(f"[Errno 2] No such file or directory: '{ROOT / 'refs' / 'anchors' / 'a.png'}'")
+    assert Worker(db.connect, runner=missing_ref).run_once() is True
+    for body in (client.get(f"/api/jobs/{jid}").json(), client.get("/api/jobs").json()["jobs"][0]):
+        assert body["error"] == "[Errno 2] No such file or directory: 'a.png'"
+
+
+def test_preview_warnings_name_files_without_folders(client, monkeypatch):
+    real = app_mod.compile_spec
+
+    def with_warnings(spec, refs=()):
+        c = real(spec, refs)
+        c.warnings += ["reference brand/designs/x_ref.png not found (not yet approved?), skipped",
+                       "set style_block differs from brand/brand.json"]
+        return c
+    monkeypatch.setattr(app_mod, "compile_spec", with_warnings)
+    r = client.post("/api/preview", json={"answers": OAKMERE})
+    assert r.status_code == 200
+    warnings = r.json()["warnings"]
+    assert "reference x_ref.png not found (not yet approved?), skipped" in warnings
+    assert "set style_block differs from brand.json" in warnings
+    assert "brand/" not in r.text and "refs/" not in r.text
+    # warnings without a path are unchanged
+    assert [w for w in warnings if w.startswith("catalogue ")] == [
+        w for w in real(build_spec(OAKMERE)).warnings if w.startswith("catalogue ")]

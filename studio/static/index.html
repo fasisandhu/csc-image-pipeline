@@ -24,7 +24,7 @@
       <template x-for="t in $store.studio.ui.tabs" :key="t.id">
         <a href="#" :class="{cur: $store.studio.ui.tab === t.id, soon: t.dim}"
            :aria-current="$store.studio.ui.tab === t.id ? 'page' : null"
-           @click.prevent="$store.studio.openTab(t)" x-text="t.label"></a>
+           @click.prevent="$store.studio.openTab(t)" x-text="$store.studio.tabLabel(t)"></a>
       </template>
     </nav>
     <div class="pill">
@@ -87,7 +87,7 @@
     </div>
   </div>
 
-  <main class="wrap">
+  <main class="wrap" x-show="$store.studio.ui.tab === 'create'">
     <div class="col">
     <!-- what do you want to make? the words fill in what they state; the person picks the rest -->
     <form class="ask" id="idea" @submit.prevent="$store.studio.fillFromWords()" :aria-busy="String($store.studio.brief.busy)">
@@ -386,7 +386,8 @@
               </div>
             </template>
             <template x-if="j.kind === 'final' && j.status === 'done'">
-              <p class="small" x-text="$store.studio.jobMeta(j) + ' · shown at the top.'"></p>
+              <div><p class="small" x-text="$store.studio.jobMeta(j) + ' · shown at the top.'"></p>
+                <button type="button" class="btn acc wide to-review" @click="$store.studio.openReview(j.id)">Open in Review</button></div>
             </template>
             <template x-if="j.status === 'failed'">
               <div><p class="why" x-text="$store.studio.errorText(j)"></p>
@@ -432,6 +433,201 @@
           </template>
         </ul>
       </section>
+    </div>
+  </main>
+
+  <!-- review (mockup screen 2): each finished image with its checks and fixes, and a person's verdict.
+       What each item allows comes from the server (actions); the page only draws it -->
+  <main class="rv" x-show="$store.studio.ui.tab === 'review'" aria-labelledby="rv-title">
+    <p class="sr-only" aria-live="polite" x-text="$store.studio.review.announce"></p>
+    <section class="rv-side" aria-labelledby="rv-title">
+      <h2 class="rv-title" id="rv-title">Images to review</h2>
+      <div class="small why lost" x-show="$store.studio.review.error || $store.studio.review.lost" role="status">
+        <span x-text="$store.studio.review.error || $store.studio.reviewLostText()"></span>
+        <button type="button" class="btn retry" @click="$store.studio.reviewCheckAgain()">Check again</button></div>
+      <p class="small" x-show="!$store.studio.review.loaded && !$store.studio.review.error">Loading&hellip;</p>
+      <p class="small" x-show="$store.studio.review.loaded && !$store.studio.review.items.length"
+         x-text="$store.studio.reviewNote('empty')"></p>
+      <template x-for="g in $store.studio.reviewGroups()" :key="g.id">
+        <div class="rv-group">
+          <h3 class="rv-gt" :id="'rvg-' + g.id" x-text="g.title"></h3>
+          <ul class="recent rv-list" :aria-labelledby="'rvg-' + g.id">
+            <template x-for="it in g.items" :key="it.id">
+              <li><button type="button" class="rj" :class="{cur: $store.studio.review.selected === it.id}"
+                          :aria-current="$store.studio.review.selected === it.id ? 'true' : null"
+                          @click="$store.studio.selectReview(it.id)">
+                <span class="rj-th">
+                  <template x-for="f in $store.studio.reviewThumb(it)" :key="f">
+                    <img x-bind="$store.studio.imgSrc(f)" alt="">
+                  </template>
+                  <svg viewBox="0 0 100 100" aria-hidden="true" focusable="false" x-show="!it.latest"
+                       :fill="$store.studio.jobHex(it)"><use x-bind="$store.studio.hoodie(it.answers && it.answers.catalogue)"></use></svg>
+                </span>
+                <span class="rj-txt"><span class="rj-title" x-text="it.words"></span>
+                  <small x-text="$store.studio.reviewMeta(it)"></small>
+                  <span><span class="spill" :class="$store.studio.reviewClass(it)" x-text="$store.studio.reviewWord(it)"></span></span></span>
+              </button></li>
+            </template>
+          </ul>
+        </div>
+      </template>
+    </section>
+
+    <div class="rv-main">
+      <template x-for="it in $store.studio.selectedReviews()" :key="it.id">
+        <article class="rv-item" :aria-labelledby="'rv-h-' + it.id">
+          <div class="rv-head">
+            <h2 :id="'rv-h-' + it.id" x-text="it.words"></h2>
+            <span class="small" x-text="$store.studio.reviewByline(it)"></span>
+          </div>
+          <!-- progress: Sketches → Final → Checks → Fixes → Your review → Export -->
+          <ol class="steps" aria-label="Progress">
+            <template x-for="s in $store.studio.reviewStages(it)" :key="s.id">
+              <li><span class="st" :class="s.state" :aria-current="s.state === 'now' ? 'step' : null" x-text="s.text"></span></li>
+            </template>
+          </ol>
+          <div class="res">
+            <div class="stage">
+              <!-- the image shown large; the latest one carries its check marks, drawn from the check's own boxes -->
+              <div class="big">
+                <template x-for="f in $store.studio.bigFiles(it)" :key="f">
+                  <div class="frame">
+                    <img x-bind="$store.studio.imgSrc(f)" :alt="$store.studio.bigAlt(it)"
+                         @load="$store.studio.imageLoaded(f, $event)" @error="$store.studio.imageBroken(f)">
+                    <template x-for="b in $store.studio.reviewBoxes(it)" :key="b.key">
+                      <div class="box" :class="{warn: !b.ok}" :style="b.style" aria-hidden="true"><em x-text="b.label"></em></div>
+                    </template>
+                    <span class="cbadge" :class="{warn: !$store.studio.colourBadgeOk(it)}" aria-hidden="true"
+                          x-show="$store.studio.colourBadge(it)" x-text="$store.studio.colourBadge(it)"></span>
+                  </div>
+                </template>
+                <p class="small" x-show="$store.studio.imageMissing(it)">This image file is not available.</p>
+              </div>
+              <p class="small shown-label" x-text="$store.studio.shownLabel(it)"></p>
+              <p class="cap" x-text="it.caption"></p>
+              <!-- before and after: one toggle per image of this shot, oldest first -->
+              <div class="thumbs" role="group" aria-label="Before and after: this shot's images, oldest first"
+                   x-show="$store.studio.reviewThumbs(it).length > 1">
+                <template x-for="t in $store.studio.reviewThumbs(it)" :key="t.key">
+                  <button type="button" class="th" :aria-pressed="String($store.studio.isShown(it, t))"
+                          :aria-label="t.long" @click="$store.studio.showImage(it, t)">
+                    <template x-for="f in t.files" :key="f"><img x-bind="$store.studio.imgSrc(f)" alt=""></template>
+                    <span aria-hidden="true" x-text="t.short"></span>
+                  </button>
+                </template>
+              </div>
+            </div>
+
+            <div class="card rv-card">
+              <p class="rv-reason" x-show="it.review === 'needs_person' && it.reason" x-text="'Needs a person: ' + it.reason"></p>
+              <p class="small working" x-show="$store.studio.runningText(it)"><span class="spin" aria-hidden="true"></span>
+                <span x-text="$store.studio.runningText(it)"></span></p>
+              <h3 class="rv-sub">Checks</h3>
+              <p class="small" x-show="!it.checks" x-text="$store.studio.noChecksText(it)"></p>
+              <p class="small why" x-show="$store.studio.checksIncomplete(it)" x-text="$store.studio.checksIncomplete(it)"></p>
+              <ul class="checks" x-show="it.checks" aria-label="Checks of the latest image">
+                <template x-for="c in $store.studio.checkLines(it)" :key="c.key">
+                  <li class="chk"><span class="dot" :class="c.state" aria-hidden="true" x-text="c.mark"></span>
+                    <div><span class="sr-only" x-text="c.sr"></span><span x-text="c.text"></span>
+                      <div class="small" x-show="c.sub" x-text="c.sub"></div>
+                      <div class="small ai-note" x-show="c.note" x-text="c.note"></div></div></li>
+                </template>
+              </ul>
+              <template x-if="it.actions && it.actions.check">
+                <div class="run-checks">
+                  <button type="button" class="btn wide" :disabled="$store.studio.review.busy !== null"
+                          @click="$store.studio.runChecks(it)" x-text="it.checks ? 'Run the checks again' : 'Run the checks'"></button>
+                  <p class="small" x-text="$store.studio.reviewNote('checkHint')"></p>
+                </div>
+              </template>
+              <p class="cap" x-text="'Caption that goes with it: “' + it.caption + '”'"></p>
+
+              <div class="stack">
+                <template x-if="it.actions && it.actions.approve">
+                  <button type="button" class="btn pri" :id="'rv-approve-' + it.id" :disabled="$store.studio.review.busy !== null"
+                          @click="$store.studio.approveReview(it)">Approve</button>
+                </template>
+                <template x-if="it.actions && it.actions.anchor">
+                  <div>
+                    <button type="button" class="btn acc" :id="'rv-anchor-' + it.id" :disabled="$store.studio.review.busy !== null"
+                            @click="$store.studio.anchorReview(it)">Approve as reference packshot</button>
+                    <p class="small anchor-hint" x-text="$store.studio.reviewNote('anchorHint')"></p>
+                  </div>
+                </template>
+                <template x-if="$store.studio.isOpen(it)">
+                  <button type="button" class="btn" :id="'rv-ask-' + it.id" :aria-expanded="String($store.studio.pickerOpen(it))"
+                          :aria-controls="'rv-picker-' + it.id" @click="$store.studio.togglePicker(it)">Ask for a change&hellip;</button>
+                </template>
+                <template x-if="!$store.studio.isOpen(it)">
+                  <button type="button" class="btn" @click="$store.studio.openInBuilder(it)">Change my choices</button>
+                </template>
+                <template x-if="it.actions && it.actions.reject">
+                  <button type="button" class="btn" :id="'rv-reject-' + it.id" :disabled="$store.studio.review.busy !== null"
+                          @click="$store.studio.openForm(it, 'reject')">Reject with a note&hellip;</button>
+                </template>
+              </div>
+
+              <!-- ask for a change: one click, one request; the codes come from the server, in plain words -->
+              <div class="picker" :id="'rv-picker-' + it.id" x-show="$store.studio.pickerOpen(it)">
+                <p class="picker-q">What should change?</p>
+                <template x-if="it.actions && it.actions.change">
+                  <div>
+                    <ul class="chips" aria-label="Fixes this image can ask for">
+                      <template x-for="c in (it.changes || [])" :key="c.code">
+                        <li><button type="button" class="pick" :disabled="$store.studio.review.busy !== null"
+                                    @click="$store.studio.askChange(it, c)" x-text="c.label"></button></li>
+                      </template>
+                    </ul>
+                    <p class="small" x-text="$store.studio.changeHint(it)"></p>
+                  </div>
+                </template>
+                <p class="small why" x-show="!(it.actions && it.actions.change)" x-text="$store.studio.noChangeText(it)"></p>
+                <button type="button" class="btn wide" @click="$store.studio.openInBuilder(it)">Change my choices</button>
+                <p class="small">Opens Create image with this image&rsquo;s choices, to make a new one.</p>
+              </div>
+
+              <!-- a verdict that needs words (reject; approve from "needs a person"), and Replace's second step -->
+              <template x-if="$store.studio.formFor(it)">
+                <form class="panel-box rv-form" id="rv-form" @submit.prevent="$store.studio.submitForm(it)"
+                      @keydown.escape.stop="$store.studio.closeForm(true)">
+                  <p class="rv-ask" x-show="$store.studio.formQuestion(it)" x-text="$store.studio.formQuestion(it)"></p>
+                  <template x-if="$store.studio.formNeedsNote(it)">
+                    <div>
+                      <label class="lbl" for="rv-note" x-text="$store.studio.formLabel(it)"></label>
+                      <textarea id="rv-note" maxlength="1000" rows="3" required :value="$store.studio.formNote()"
+                                @input="$store.studio.setFormNote($event.target.value)"></textarea>
+                    </div>
+                  </template>
+                  <div class="pair">
+                    <button type="submit" class="btn pri" :disabled="!$store.studio.canSubmitForm(it)"
+                            x-text="$store.studio.formButton(it)"></button>
+                    <button type="button" class="btn" @click="$store.studio.closeForm(true)">Cancel</button>
+                  </div>
+                </form>
+              </template>
+
+              <p class="rv-msg" :class="{err: $store.studio.reviewMsg(it).err}" role="status" aria-live="polite"
+                 x-text="$store.studio.reviewMsg(it).text"></p>
+              <p class="small spend" x-text="$store.studio.spendText(it)"></p>
+              <p class="small" x-show="$store.studio.limitsText(it)" x-text="$store.studio.limitsText(it)"></p>
+
+              <template x-if="(it.steps || []).length">
+                <div>
+                  <button type="button" class="disc" :aria-controls="'rv-steps-' + it.id"
+                          :aria-expanded="String($store.studio.review.stepsOpen)" @click="$store.studio.toggleSteps()"
+                          x-text="($store.studio.review.stepsOpen ? '▾ Hide' : '▸ Show') + ' what ran automatically'"></button>
+                  <ol class="rv-steps" :id="'rv-steps-' + it.id" x-show="$store.studio.review.stepsOpen">
+                    <template x-for="s in $store.studio.stepLines(it)" :key="s.key">
+                      <li><span x-text="s.text"></span> <span class="small" x-text="s.meta"></span>
+                        <div class="small why" x-show="s.error" x-text="s.error"></div></li>
+                    </template>
+                  </ol>
+                </div>
+              </template>
+            </div>
+          </div>
+        </article>
+      </template>
     </div>
   </main>
 </div>

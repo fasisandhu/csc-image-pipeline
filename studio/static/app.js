@@ -11,7 +11,7 @@
   const TABS = [
     { id: 'create', label: 'Create image' },
     { id: 'clients', label: 'Clients', later: true },
-    { id: 'review', label: 'Review', later: true },
+    { id: 'review', label: 'Review' },
     { id: 'library', label: 'Library', later: true },
     { id: 'brand', label: 'Brand kit', later: true },
     { id: 'ads', label: 'Ads', dim: true },
@@ -94,7 +94,7 @@
     failed: 'Nothing was retried. You can try again with the buttons above.',
     noError: 'It stopped without saying why.',
     interrupted: 'Stopped when the studio restarted; nothing was retried.',
-    review: 'Checks and approval come in the Review tab (next step).',
+    review: 'Its checks, fixes and approval are in the Review tab.',
     anchorDone: 'This reference packshot needs approving before your shot can use it. For now, ask the owner to approve it; the Review tab arrives in the next step.',
     unreachable: "Couldn't reach the studio; check it is running, then try again.",
     refused: "The studio couldn't start this. Try again in a moment.",
@@ -127,6 +127,52 @@
   ];
   const TOUR_GAP = 12;  // px between the tour card and what it points at, and from the window edge
   const TOUR_PAD = 6;  // px of the highlight ring around what it points at
+  // review: each finished final, its checks and fixes, and a person's verdict. The server says what an item
+  // allows (item.actions) and gives every word about the image in plain language; the page only draws it.
+  const REVIEW_POLL_MS = 3000;  // while any item is being checked or fixed
+  const REVIEW_WORDS = {
+    checking: 'Checking…', fixing: 'Fixing…', ready: 'Ready for your review', needs_person: 'Needs a person',
+    approved: 'Approved', anchor: 'Reference packshot', rejected: 'Rejected',
+  };
+  const REVIEW_CLASS = {
+    checking: 's-running', fixing: 's-running', ready: 's-ready', needs_person: 's-person',
+    approved: 's-done', anchor: 's-done', rejected: 's-failed',
+  };
+  const REVIEW_GROUPS = [  // the list's sections, in this order; an item never checked waits for a person
+    { id: 'waiting', title: 'Waiting for you', states: [null, 'ready', 'needs_person'] },
+    { id: 'working', title: 'Being checked or fixed', states: ['checking', 'fixing'] },
+    { id: 'decided', title: 'Decided', states: ['approved', 'anchor', 'rejected'] },
+  ];
+  const BUSY_REVIEW = new Set(['checking', 'fixing']);
+  const BUSY_STEP = new Set(['queued', 'running']);
+  const OPEN_ACTIONS = ['approve', 'anchor', 'change', 'reject'];  // any of these: the item awaits a person
+  // the chain's images after the first, named by the step that made each (step kinds are never shown)
+  const FIX_SHORT = { repair: 'Repaired', finish: 'Colour fixed', regenerate: 'New image', composite: 'Logo placed' };
+  const STEP_STATUS = { queued: 'waiting', running: 'running…', done: 'done', failed: 'stopped, not retried' };
+  const CHECK_MARKS = { ok: '✓', fix: '↻', bad: '✗', look: '?' };
+  const CHECK_SR = { ok: 'Passed: ', fix: '', bad: 'Problem: ', look: 'Please look: ' };
+  const NOT_CHECKED = 'Not checked — please look';
+  const REVIEW_NOTES = {
+    empty: 'No finished images yet. Images you create appear here with their checks, for your approval.',
+    list: "Couldn't load the images to review; check the studio is running.",
+    lost: 'Lost touch with the studio while checking on the review. Check it is running, then check again.',
+    unreachable: "Couldn't reach the studio; check it is running, then try again.",
+    refused: "The studio couldn't do that. Try again in a moment.",
+    notChecked: 'The checks have not run on this image yet.',
+    checking: 'The checks are running…',
+    approved: 'Approved.',
+    anchor: 'Saved as the reference packshot for this colour.',
+    rejected: 'Rejected. Your note is saved as a draft rule for future images; it stays off until someone switches it on.',
+    checksStarted: 'The checks are running; this page updates by itself.',
+    replace: 'A reference packshot already exists for this colour. Replace it?',
+    builder: 'These are that image’s choices. Change what you like, then make it again.',
+    anchorHint: 'Later shots in this colour copy it as the exact garment.',
+    checkHint: 'No new image is made; the checks make a few small AI calls.',
+    decided: 'This image is decided. Change your choices to make a new one.',
+    running: 'A check or fix is running on this image; wait for it to finish.',
+    noRepairs: 'No repairs are left on this image. Change your choices to make a new one.',
+    noChanges: 'No fixes can be asked for on this image here. Change your choices to make a new one.',
+  };
 
   function plainObject(v) { return v && typeof v === 'object' && !Array.isArray(v) ? v : {}; }
   function same(a, b) { return JSON.stringify(a) === JSON.stringify(b); }
@@ -244,6 +290,16 @@
   let guideSeq = 0, guidePressOutside = false;  // guidePressOutside: the last press began on the backdrop
   // tour: where the keyboard goes back to when it ends, and the listeners that keep the card in place
   let tourReturn = null, tourFrame = 0, tourResize = null;
+  // review: reviewSeq numbers list requests (only the newest reply is used); reviewEpoch counts items replaced
+  // by an action's reply, and reviewActed holds each item's last one, so a list sent before an action never
+  // puts back that item's older state
+  let reviewTimer = null, reviewSeq = 0, reviewEpoch = 0, reviewFails = 0;
+  const reviewActed = new Map();
+
+  function busyReview(it) {
+    return BUSY_REVIEW.has(it.review) || (Array.isArray(it.steps) && it.steps.some(s => BUSY_STEP.has(s.status)));
+  }
+  function smallMoney(n) { const v = Number(n) || 0; return v > 0 && v < 0.005 ? 'under $0.01' : money(v); }
 
   function guideDialog() { return document.getElementById('guide'); }
   function guideButton() { return document.getElementById('guide-btn'); }
@@ -336,6 +392,13 @@
             promptOpen: false },
       // guide: the page shown in the guide, and its loading state
       guide: { pages: GUIDE_PAGES, later: GUIDE_LATER, page: GUIDE_PAGES[0].id, loading: false, error: '' },
+      // review: the items from /api/reviews (newest first) and the Review tab's own state.
+      // selected: the item shown; view: {id, key} of the image shown large, else its latest; busy: the item
+      // id of the request in flight (one at a time); form: {id, kind, note, replace, from} for a verdict that
+      // needs words or a Replace; picker: the item whose "Ask for a change" is open; msg: {id, text, err};
+      // sizes: each image's own pixel size, to scale the check boxes drawn on it
+      review: { items: [], loaded: false, error: '', lost: false, selected: null, view: null, busy: null, form: null,
+                picker: null, msg: null, announce: '', sizes: {}, broken: {}, stepsOpen: false },
 
       init() {
         this.refreshBudget();
@@ -347,6 +410,12 @@
         // the first-visit tour starts once the builder has drawn its first options (or said it couldn't)
         this.loadQuestions().then(() => window.Alpine.nextTick(() => this.firstVisitTour()));
         this.loadJobs();
+        this.loadReviews();  // the Review tab's count; checks still running are followed from here
+        // polling pauses while the browser tab is hidden and catches up when it is shown again
+        document.addEventListener('visibilitychange', () => {
+          if (document.hidden) { clearTimeout(reviewTimer); reviewTimer = null; }
+          else if (this.review.loaded && !this.review.lost) this.loadReviews();
+        });
       },
 
       // budget
@@ -376,6 +445,12 @@
         if (tab.later) { this.ui.note = tab.label + ': coming in a later step.'; return; }
         this.ui.note = '';
         this.ui.tab = tab.id;
+        if (tab.id === 'review') this.reviewCheckAgain();  // coming back to the tab checks again, even after losing touch
+      },
+      tabLabel(t) {  // Review counts the images waiting for a person
+        const waiting = REVIEW_GROUPS[0].states;
+        const n = t.id === 'review' ? this.review.items.filter(i => waiting.includes(i.review || null)).length : 0;
+        return n ? t.label + ' (' + n + ')' : t.label;
       },
       saveDraft() { storage.set('answers', this.answers); },
 
@@ -439,9 +514,11 @@
         const box = doc.closest('.guide-page');
         if (box) box.scrollTop = 0;
       },
-      replayTour() {
+      replayTour() {  // the tour points at the builder: from another tab it goes there first
         this.closeGuide();
-        this.startTour(guideButton());
+        if (this.ui.tab === 'create') { this.startTour(guideButton()); return; }
+        Object.assign(this.ui, { tab: 'create', note: '' });
+        window.Alpine.nextTick(() => window.requestAnimationFrame(() => this.startTour(guideButton())));
       },
 
       // --- first-visit tour: Next / Back / Skip; Escape ends it; it never covers or blocks the page --
@@ -949,7 +1026,10 @@
         const was = i >= 0 ? this.jobs[i].status : null;
         if (i >= 0) this.jobs.splice(i, 1, job);
         else this.jobs.unshift(job);
-        if (ACTIVE.has(was) && !ACTIVE.has(job.status)) this.refreshBudget();  // it may have spent
+        if (ACTIVE.has(was) && !ACTIVE.has(job.status)) {
+          this.refreshBudget();  // it may have spent
+          if (job.kind === 'final' && job.status === 'done') this.loadReviews();  // its checks start now
+        }
       },
       dropJob(id) {
         this.jobs = this.jobs.filter(j => j.id !== id);
@@ -1230,11 +1310,407 @@
         }
         return null;
       },
+      openReview(id) {  // "Open in Review" on a finished image: the Review tab with that item shown
+        this.selectReview(id);
+        this.openTab(TABS.find(t => t.id === 'review'));
+      },
+
+      // --- review: the list, polling every 3 s while anything is checked or fixed ---------------------
+      async loadReviews() {
+        clearTimeout(reviewTimer);
+        reviewTimer = null;
+        const seq = ++reviewSeq, since = reviewEpoch;
+        let res;
+        try {
+          res = await api('/api/reviews');
+        } catch (e) {
+          if (seq !== reviewSeq) return;
+          if (!this.review.loaded) this.review.error = REVIEW_NOTES.list;
+          else if (++reviewFails >= POLL_FAILS) this.review.lost = true;
+          else this.scheduleReviewPoll();
+          return;
+        }
+        if (seq !== reviewSeq) return;  // a newer list is on its way
+        reviewFails = 0;
+        this.setReviews(res.items, since);
+        this.scheduleReviewPoll();
+      },
+      setReviews(items, since) {
+        const old = new Map(this.review.items.map(i => [i.id, i]));
+        const fresh = (Array.isArray(items) ? items : []).filter(i => i && Number.isInteger(i.id))
+          .map(i => ((reviewActed.get(i.id) || 0) > since && old.has(i.id) ? old.get(i.id) : i));
+        if (this.review.loaded) {  // say what changed by itself (a person's own click is answered in place)
+          const moved = fresh.filter(i => !old.has(i.id) || old.get(i.id).review !== i.review);
+          const said = moved.map(i => this.statusLine(i));
+          if (said.length) this.review.announce = said.length > 3 ? said.length + ' images changed in the review list.' : said.join(' ');
+          const m = this.review.msg;  // an earlier answer ("the fix is running…") is out of date once its item moved on
+          if (m && moved.some(i => i.id === m.id)) this.review.msg = null;
+        }
+        Object.assign(this.review, { items: fresh, loaded: true, error: '', lost: false });
+        if (!this.selectedReview()) this.review.selected = this.firstReview();
+      },
+      putReview(item, announce) {  // a fresh copy of one item (an action's reply, or one read again)
+        if (!item || !Number.isInteger(item.id)) return;
+        reviewActed.set(item.id, ++reviewEpoch);
+        const i = this.review.items.findIndex(x => x.id === item.id);
+        const was = i >= 0 ? this.review.items[i].review : undefined;
+        if (i >= 0) this.review.items.splice(i, 1, item);
+        else this.review.items.unshift(item);
+        if (announce && was !== item.review) this.review.announce = this.statusLine(item);
+        if (busyReview(item)) this.scheduleReviewPoll();
+      },
+      async refreshReview(id) {  // after a refusal: the item as it stands now (decided by someone else, running…)
+        let res;
+        try { res = await fetch('/api/reviews/' + id); } catch (e) { return; }
+        if (res.status === 404) {
+          this.review.items = this.review.items.filter(i => i.id !== id);
+          if (this.review.selected === id) this.review.selected = this.firstReview();
+          return;
+        }
+        const item = res.ok ? await res.json().catch(() => null) : null;
+        if (item) this.putReview(item, true);
+      },
+      scheduleReviewPoll() {
+        if (reviewTimer || this.review.lost || document.hidden || !this.review.items.some(busyReview)) return;
+        reviewTimer = setTimeout(() => { reviewTimer = null; this.loadReviews(); }, REVIEW_POLL_MS);
+      },
+      reviewCheckAgain() {
+        Object.assign(this.review, { lost: false, error: '' });
+        reviewFails = 0;
+        this.loadReviews();
+      },
+      reviewLostText() { return this.review.lost ? REVIEW_NOTES.lost : ''; },
+      reviewNote(key) { return REVIEW_NOTES[key] || ''; },
+      reviewGroups() {
+        return REVIEW_GROUPS.map(g => ({ id: g.id, title: g.title,
+                                         items: this.review.items.filter(i => g.states.includes(i.review || null)) }))
+          .filter(g => g.items.length);
+      },
+      firstReview() { const g = this.reviewGroups()[0]; return g ? g.items[0].id : null; },
+      selectedReview() { return this.review.items.find(i => i.id === this.review.selected) || null; },
+      selectedReviews() { const it = this.selectedReview(); return it ? [it] : []; },  // x-for over it names the item
+      selectReview(id) {
+        Object.assign(this.review, { selected: id, view: null, form: null, picker: null, msg: null });
+      },
+      reviewWord(it) { return REVIEW_WORDS[it.review] || 'Not checked yet'; },
+      statusLine(it) { return it.words + ': ' + this.reviewWord(it).replace(/…$/, '') + '.'; },  // for the live region
+      reviewClass(it) { return REVIEW_CLASS[it.review] || ''; },
+      reviewMeta(it) { return [clockText(it.created), smallMoney(it.cost_usd)].filter(Boolean).join(' · '); },
+      reviewByline(it) { return ['Asked for by ' + it.user, clockText(it.created)].filter(Boolean).join(' · '); },
+      reviewThumb(it) { return it.latest ? [it.latest] : []; },  // keyed: x-bind objects bind once
+
+      // --- review: progress line --------------------------------------------------------------------
+      reviewStages(it) {  // Sketches → Final → Checks → Fixes → Your review → Export
+        const steps = Array.isArray(it.steps) ? it.steps : [];
+        const checks = steps.filter(s => s.kind === 'check'), fixes = steps.filter(s => s.kind !== 'check');
+        const doneFixes = fixes.filter(s => s.status === 'done').length;
+        const st = (id, state, text) => ({ id, state, text });
+        const out = [it.layout ? st('sketch', 'ok', '✓ Sketches') : st('sketch', 'skip', 'Sketches · not used'),
+                     st('final', 'ok', '✓ Final')];
+        if (it.review === 'checking') out.push(st('checks', 'now', 'Checking…'));
+        else if (it.checks && it.checks.complete) out.push(st('checks', 'ok', '✓ Checks'));
+        else if (it.checks) out.push(st('checks', 'warn', 'Checks · please look'));
+        else if (checks.some(s => s.status === 'failed')) out.push(st('checks', 'warn', 'Checks · stopped'));
+        else out.push(st('checks', 'wait', 'Checks · not run'));
+        if (it.review === 'fixing') out.push(st('fixes', 'now', 'Fixing…'));
+        else if (fixes.some(s => s.status === 'failed')) out.push(st('fixes', 'warn', 'Fixes · stopped'));
+        else if (doneFixes) out.push(st('fixes', 'ok', '✓ Fixes · ' + doneFixes));
+        else out.push(st('fixes', 'skip', 'Fixes · none'));
+        if (it.review === 'approved' || it.review === 'anchor') out.push(st('you', 'ok', '✓ ' + this.reviewWord(it)));
+        else if (it.review === 'rejected') out.push(st('you', 'bad', '✗ Rejected'));
+        else if (BUSY_REVIEW.has(it.review)) out.push(st('you', 'wait', 'Your review'));
+        else out.push(st('you', 'now', 'Your review'));
+        out.push(st('export', 'wait', 'Export'));
+        return out;
+      },
+
+      // --- review: the image large, before and after, and the checks drawn on it -------------------
+      reviewThumbs(it) {  // the sketch it was built on, then the chain's images, oldest first
+        const out = [];
+        if (it.layout) {
+          out.push({ key: 'sketch', path: it.layout, files: [it.layout], short: 'Sketch', latest: false,
+                     long: 'The sketch it was built on (free, never published)' });
+        }
+        const images = Array.isArray(it.images) ? it.images : [];
+        // the chain's images after the first are the outputs of its finished fixes, in order (studio.library)
+        const fixes = (Array.isArray(it.steps) ? it.steps : []).filter(s => s.kind !== 'check' && s.status === 'done');
+        images.forEach((p, k) => {
+          const latest = k === images.length - 1, many = images.length > 1;
+          let short = many ? 'First' : 'Final', long = many ? 'The first image' : 'The final image';
+          if (k > 0) {
+            const s = fixes[k - 1];
+            short = (s && FIX_SHORT[s.kind]) || 'Image ' + (k + 1);
+            long = this.fixWords(s) || 'Image ' + (k + 1);
+          }
+          out.push({ key: 'img' + k, path: p || null, files: p ? [p] : [], latest,
+                     short: latest && many ? short + ' · latest' : short, long: latest && many ? long + ' (latest)' : long });
+        });
+        return out;
+      },
+      fixWords(s) {
+        if (!s) return '';
+        if (s.kind === 'repair') return 'After the repair of ' + (s.fault || 'one detail');
+        if (s.kind === 'finish') return 'After the colour correction';
+        if (s.kind === 'regenerate') return 'A new image of this shot';
+        if (s.kind === 'composite') return 'With the real logo placed';
+        return capital(s.label || '');
+      },
+      shownThumb(it) {  // the image shown large: the one picked below, else the latest
+        const thumbs = this.reviewThumbs(it), v = this.review.view;
+        return (v && v.id === it.id && thumbs.find(t => t.key === v.key)) || thumbs.find(t => t.latest) || null;
+      },
+      isShown(it, t) { const s = this.shownThumb(it); return !!s && s.key === t.key; },
+      showImage(it, t) { this.review.view = { id: it.id, key: t.key }; },
+      showingLatest(it) { const s = this.shownThumb(it); return !!s && s.latest; },
+      bigFiles(it) {
+        const s = this.shownThumb(it);
+        return s && s.files.length && !this.review.broken[s.path] ? s.files : [];
+      },
+      imageMissing(it) { return !this.bigFiles(it).length; },
+      bigAlt(it) { const s = this.shownThumb(it); return (s ? s.long + ': ' : '') + it.words; },
+      shownLabel(it) {
+        const s = this.shownThumb(it);
+        if (!s) return '';
+        const marks = !s.latest && it.checks ? ' · the check marks are on the latest image' : '';
+        return 'Showing: ' + s.long + marks;
+      },
+      imageLoaded(path, e) {  // the image's own pixel size: the check boxes are in its pixels
+        const img = e && e.target;
+        if (img && img.naturalWidth && img.naturalHeight) this.review.sizes[path] = { w: img.naturalWidth, h: img.naturalHeight };
+      },
+      imageBroken(path) { this.review.broken[path] = true; },
+      reviewBoxes(it) {  // the logo boxes the check found, on the latest image only; no box is ever guessed
+        const size = it.latest && this.review.sizes[it.latest];
+        if (!size || !this.showingLatest(it) || !it.checks) return [];
+        const pct = (v, total) => Math.max(0, Math.min(100, (v / total) * 100));
+        const out = [];
+        (Array.isArray(it.checks.logo) ? it.checks.logo : []).forEach((l, i) => {
+          const b = Array.isArray(l.box) ? l.box.map(Number) : [];
+          if (b.length !== 4 || !b.every(Number.isFinite)) return;  // no box: the list says it instead
+          const left = pct(Math.min(b[0], b[2]), size.w), top = pct(Math.min(b[1], b[3]), size.h);
+          const width = Math.min(pct(Math.abs(b[2] - b[0]), size.w), 100 - left);
+          const height = Math.min(pct(Math.abs(b[3] - b[1]), size.h), 100 - top);
+          const where = l.placement ? capital(String(l.placement)) + ' logo' : 'Logo';
+          out.push({ key: 'logo' + i, ok: !!l.ok, label: where + (l.ok ? ' ✓' : ' · please look'),
+                     style: 'left:' + left + '%;top:' + top + '%;width:' + width + '%;height:' + height + '%' });
+        });
+        return out;
+      },
+      colourBadge(it) {  // the colour result on the latest image, e.g. "Colour difference 2.1 (limit 5)"
+        const c = it.checks && it.checks.colour;
+        if (!c || !this.showingLatest(it) || !this.bigFiles(it).length) return '';
+        return c.difference === null || c.difference === undefined ? 'Colour not measured' : String(c.words || '');
+      },
+      colourBadgeOk(it) { const c = it.checks && it.checks.colour; return !!c && c.ok === true; },
+
+      // --- review: checks in plain words -------------------------------------------------------------
+      checkLines(it) {  // pass ✓, fixed ↻, a problem ✗, and "Not checked — please look" for a line nobody judged
+        const c = it.checks;
+        if (!c) return [];
+        const out = [];
+        const add = (key, state, text, sub, note) => out.push({ key, state, mark: CHECK_MARKS[state], sr: CHECK_SR[state],
+                                                               text: String(text || ''), sub: sub || '', note: note || '' });
+        const col = c.colour;
+        if (col) {
+          if (col.ok === null || col.ok === undefined) add('colour', 'look', col.words, NOT_CHECKED);
+          else add('colour', col.ok ? 'ok' : 'bad', col.ok ? 'Colour matches' : 'Colour is off', col.words);
+        }
+        if (c.text) add('text', c.text.ok ? 'ok' : 'bad', c.text.words);
+        (Array.isArray(c.logo) ? c.logo : []).forEach((l, i) => add('logo' + i, l.ok ? 'ok' : 'bad', l.words));
+        (Array.isArray(c.fixed) ? c.fixed : []).forEach((f, i) =>
+          add('fixed' + i, 'fix', 'Fixed: ' + f, 'Fixed automatically · compare before and after'));
+        if (c.visual_error) add('visual', 'look', c.visual_error, NOT_CHECKED);
+        (Array.isArray(c.lines) ? c.lines : []).forEach((l, i) => {
+          if (l.ok === true) add('line' + i, 'ok', l.text, '', l.note);
+          else if (l.ok === false) add('line' + i, 'bad', l.text, l.fault ? 'Problem: ' + l.fault : 'A problem was found', l.note);
+          else add('line' + i, 'look', l.text, NOT_CHECKED, l.note);
+        });
+        return out;
+      },
+      checksIncomplete(it) {  // why the checks are not a verdict, unless the "needs a person" line says it already
+        const c = it.checks;
+        return c && !c.complete && c.reason && !(it.review === 'needs_person' && it.reason === c.reason) ? c.reason : '';
+      },
+      noChecksText(it) { return it.review === 'checking' ? REVIEW_NOTES.checking : REVIEW_NOTES.notChecked; },
+      runningText(it) {  // the step in progress, in plain words
+        const s = (Array.isArray(it.steps) ? it.steps : []).find(x => BUSY_STEP.has(x.status));
+        if (!s) return BUSY_REVIEW.has(it.review) ? REVIEW_NOTES.checking : '';
+        const what = s.kind === 'check' ? 'the checks' : capital(s.label || '') + (s.fault ? ' of ' + s.fault : '');
+        return (s.status === 'queued' ? 'Waiting: ' : 'Running: ') + what + '…';
+      },
+      spendText(it) { return 'Spend so far ' + smallMoney(it.cost_usd) + ' for this image'; },
+      limitsText(it) {  // while the image is still open to fixes
+        const l = plainObject(it.limits_left);
+        if (!this.isOpen(it) && !busyReview(it)) return '';
+        if (!Number.isInteger(l.repairs) || !Number.isInteger(l.regenerations)) return '';
+        return 'Repairs left on this image: ' + l.repairs + ' · new images left for this shot: ' + l.regenerations;
+      },
+      stepLines(it) {
+        return (Array.isArray(it.steps) ? it.steps : []).map(s => ({
+          key: s.id, text: capital(s.label || '') + (s.fault ? ': ' + s.fault : ''),
+          meta: [STEP_STATUS[s.status] || '', s.cost_usd ? smallMoney(s.cost_usd) : ''].filter(Boolean).join(' · '),
+          error: s.error || '' }));
+      },
+      toggleSteps() { this.review.stepsOpen = !this.review.stepsOpen; },
+
+      // --- review: a person's verdicts and requests (one request at a time) ---------------------------
+      isOpen(it) { const a = plainObject(it.actions); return OPEN_ACTIONS.some(k => a[k] === true); },
+      reviewMsg(it) { const m = this.review.msg; return m && m.id === it.id ? m : { text: '', err: false }; },
+      async reviewAct(it, what, body) {  // POST /api/reviews/<id>/<what>; the reply's item replaces this one
+        if (this.review.busy !== null) return null;
+        const id = it.id;
+        Object.assign(this.review, { busy: id, msg: null });
+        let res, data;
+        try {
+          res = await fetch('/api/reviews/' + id + '/' + what, post(body));
+          data = plainObject(await res.json().catch(() => null));
+        } catch (e) {
+          this.review.msg = { id, err: true, text: REVIEW_NOTES.unreachable };
+          return null;
+        } finally {
+          this.review.busy = null;
+        }
+        if (res.ok && data.item) {
+          this.putReview(data.item, false);
+          return data;
+        }
+        if (what === 'anchor' && res.status === 409 && data.anchor_exists === true) {  // Replace is a second click
+          this.openForm(it, 'anchor', { note: String(body.note || ''), replace: true });
+          this.refreshReview(id);
+          return null;
+        }
+        const said = typeof data.error === 'string' ? capital(data.error.trim()) : '';
+        this.review.msg = { id, err: true, text: !said ? REVIEW_NOTES.refused : /[.!?]$/.test(said) ? said : said + '.' };
+        if (res.status === 409 || res.status === 404) this.refreshReview(id);  // e.g. already decided elsewhere
+        return null;
+      },
+      async sendVerdict(it, what, body, done) {
+        const data = await this.reviewAct(it, what, body);
+        if (!data) return null;
+        this.review.form = null;
+        this.review.msg = { id: it.id, err: false, text: done };
+        return data;
+      },
+      approveReview(it) {  // from "needs a person" the server asks for a note saying why it is fine
+        if (plainObject(it.actions).note_required) { this.openForm(it, 'approve'); return null; }
+        return this.sendVerdict(it, 'approve', { note: '' }, REVIEW_NOTES.approved);
+      },
+      anchorReview(it) {
+        const a = plainObject(it.actions);
+        if (a.note_required || a.anchor_exists) {
+          this.openForm(it, 'anchor', { replace: !!a.anchor_exists });
+          return null;
+        }
+        return this.sendVerdict(it, 'anchor', { note: '', replace: false }, REVIEW_NOTES.anchor);
+      },
+      openForm(it, kind, extra) {  // from: the button the keyboard goes back to on Cancel
+        this.review.picker = null;
+        this.review.msg = null;
+        this.review.form = { id: it.id, kind, note: '', replace: false, from: 'rv-' + kind + '-' + it.id, ...extra };
+        window.Alpine.nextTick(() => {  // the keyboard goes to the note, else to the confirm button
+          const el = document.querySelector('#rv-form textarea') || document.querySelector('#rv-form button[type="submit"]');
+          if (el) el.focus();
+        });
+      },
+      closeForm(giveBack) {
+        const f = this.review.form;
+        this.review.form = null;
+        if (!giveBack || !f || !f.from) return;
+        window.Alpine.nextTick(() => { const b = document.getElementById(f.from); if (b) b.focus(); });
+      },
+      formFor(it) {  // the open form, only while the server still allows what it asks for
+        const f = this.review.form, a = plainObject(it.actions);
+        return f && f.id === it.id && a[f.kind] === true ? f : null;
+      },
+      formNeedsNote(it) {
+        const f = this.formFor(it);
+        return !!f && (f.kind === 'reject' || plainObject(it.actions).note_required === true);
+      },
+      formQuestion(it) { const f = this.formFor(it); return f && f.kind === 'anchor' && f.replace ? REVIEW_NOTES.replace : ''; },
+      formLabel(it) {
+        const f = this.formFor(it);
+        if (!f) return '';
+        if (f.kind === 'reject') return 'What is wrong? Your note becomes a draft rule for future images.';
+        return 'This image needs a person. Say why it is fine:';
+      },
+      formButton(it) {
+        const f = this.formFor(it);
+        if (!f) return '';
+        if (f.kind === 'reject') return 'Reject';
+        if (f.kind === 'anchor') return f.replace ? 'Replace' : 'Approve as reference packshot';
+        return 'Approve';
+      },
+      formNote() { return this.review.form ? this.review.form.note : ''; },
+      setFormNote(v) { if (this.review.form) this.review.form.note = String(v); },
+      canSubmitForm(it) {
+        const f = this.formFor(it);
+        return !!f && this.review.busy === null && (!this.formNeedsNote(it) || !!f.note.trim());
+      },
+      submitForm(it) {
+        if (!this.canSubmitForm(it)) return null;
+        const f = this.review.form, note = f.note.trim();
+        if (f.kind === 'reject') return this.sendReject(it, note);
+        if (f.kind === 'anchor') return this.sendVerdict(it, 'anchor', { note, replace: !!f.replace }, REVIEW_NOTES.anchor);
+        return this.sendVerdict(it, 'approve', { note }, REVIEW_NOTES.approved);
+      },
+      async sendReject(it, note) {
+        const data = await this.sendVerdict(it, 'reject', { note }, REVIEW_NOTES.rejected);
+        const draft = data && data.rule && typeof data.rule.prompt_text === 'string' ? data.rule.prompt_text.trim() : '';
+        if (draft) this.review.msg.text += ' Draft: “' + draft + '”';
+        return data;
+      },
+      togglePicker(it) {
+        Object.assign(this.review, { form: null, msg: null, picker: this.review.picker === it.id ? null : it.id });
+      },
+      pickerOpen(it) { return this.review.picker === it.id && this.isOpen(it); },
+      changeHint(it) {
+        const n = plainObject(it.limits_left).repairs;
+        return 'Each fix edits this image once, within its limits' + (Number.isInteger(n) ? ' (repairs left: ' + n + ').' : '.');
+      },
+      noChangeText(it) {  // why no fix can be asked for, in plain words (the server decides; this only explains)
+        if (busyReview(it)) return REVIEW_NOTES.running;
+        if (!this.isOpen(it)) return REVIEW_NOTES.decided;
+        return plainObject(it.limits_left).repairs === 0 ? REVIEW_NOTES.noRepairs : REVIEW_NOTES.noChanges;
+      },
+      async askChange(it, c) {
+        const data = await this.reviewAct(it, 'change', { code: c.code });
+        if (!data) return null;
+        this.review.picker = null;
+        this.review.msg = { id: it.id, err: false, text: 'Asked for: ' + c.label + '. The fix is running; this page updates by itself.' };
+        return data;
+      },
+      async runChecks(it) {
+        const data = await this.reviewAct(it, 'check', {});
+        if (data) this.review.msg = { id: it.id, err: false, text: REVIEW_NOTES.checksStarted };
+        return data;
+      },
+      openInBuilder(it) {  // "Change my choices": Create image with this image's answers, through the usual flow
+        const a = clone(plainObject(it.answers));
+        for (const k of new Set([...Object.keys(this.answers), ...Object.keys(a)])) edits[k] = (edits[k] || 0) + 1;
+        touchSeq++;
+        briefJump = null;
+        this.answers = a;
+        const c = a.colour;
+        Object.assign(this.builder.custom, c && typeof c === 'object'
+          ? { open: true, name: String(c.name || ''), hex: String(c.hex || ''), hint: '' }
+          : { open: false, name: '', hex: '', hint: '' });
+        Object.assign(this.brief, { done: false, picked: {}, owned: {}, hint: '', error: '' });
+        Object.assign(this.builder, { active: null, showAll: false, fresh: [], byWords: [] });
+        this.answersChanged();
+        this.saveDraft();
+        this.askQuestions();
+        Object.assign(this.ui, { tab: 'create', note: REVIEW_NOTES.builder });
+        this.review.picker = null;
+        window.Alpine.nextTick(() => window.requestAnimationFrame(() => {
+          window.scrollTo({ top: 0, left: 0, behavior: 'instant' });
+          const card = document.getElementById('summary');
+          if (shown(card)) card.focus({ preventScroll: true });
+        }));
+      },
     };
   }
 
   document.addEventListener('alpine:init', () => {
-    Alpine.store('studio', createStudio());
-    Alpine.store('studio').init();
+    Alpine.store('studio', createStudio());  // Alpine runs the store's init() itself, once
   });
 })();

@@ -432,10 +432,32 @@ def test_face_without_reference_sheet_never_regenerates(env, monkeypatch):
     # with an approved sheet, a face fault regenerates
     env.rows.clear()
     monkeypatch.setattr(worker_mod, "has_face_reference", lambda spec: True)
+    monkeypatch.setattr(review, "has_face_reference", lambda spec: True)
     env.script = [{"visual": "face"}]
     third = make_final(MAYA_SID)
     drain(Worker(db.connect, runner=env.runner))
-    assert [k for k, _ in kinds(third)][:2] == ["check", "regenerate"]
+    assert [k for k, _ in kinds(third)] == ["check", "regenerate", "check"]
+    assert job(third)["review"] == "ready"  # the face was judged by eye this time
+
+
+def test_on_model_fault_is_fixed_then_the_face_waits_for_a_person(env):
+    """I2: an on-model shot whose cast member has no approved sheet still gets its automatic fixes; only once the rest
+    passes does it go to a person, for the face alone."""
+    assert worker_mod.has_face_reference is review.has_face_reference  # one definition, in the checks engine
+    env.script = [{"visual": "drawcord_shape"}]
+    jid = make_final(MAYA_SID)
+    drain(Worker(db.connect, runner=env.runner))
+    assert kinds(jid) == [("check", "done"), ("repair", "done"), ("check", "done")]
+    first, fix, last = steps(jid)
+    assert first["result"]["next"] == "repair" and fix["code"] == "drawcord_shape" and len(env.repairs) == 1
+    assert last["result"]["complete"] is True and last["result"]["next"] == "approve"
+    assert last["result"]["face_unchecked"] is True
+    assert last["result"]["visual"]["lines"][-1] == {"text": "Face matches the cast sheet for Maya", "ok": None,
+                                                     "code": None, "note": "No approved reference photo of Maya yet."}
+    j = job(jid)
+    assert j["review"] == "needs_person" and j["review_reason"] == worker_mod.FACE_UNCHECKED
+    assert env.moves == [Path(first["input"]).name]  # the repaired render passed: it stays in out/finals
+    assert [e["face_unchecked"] for e in env.rows if e.get("event") == "qa"] == [True, True]
 
 
 def test_regenerate_uses_the_jobs_layout(env, monkeypatch):

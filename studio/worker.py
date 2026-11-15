@@ -8,7 +8,8 @@ by a restart is marked by db.mark_interrupted, never re-run.
 The review chain (one final job):
 
     final done                -> check                                   review: checking
-    check: approve            -> (nothing)                               ready
+    check: approve            -> (nothing)                               ready, or needs_person when
+                                                                         the face could not be checked
     check: finish             -> finish (free colour correction)         fixing
     check: repair <code>      -> repair (paid, routed first)             fixing
     check: regenerate         -> regenerate (a new final, routed)        fixing
@@ -28,7 +29,8 @@ Spend stays within the worst case shown before "Approve & create" (1 final + 2 n
 own render that is never repaired or replaced automatically (only approved, or colour-corrected, or sent to
 a person). Free loops are capped: two colour corrections per render, one composite per job. A composite goes
 only onto a front packshot shot with a chest logo. A face fault never pays for a new image while the cast
-member has no approved reference sheet.
+member has no approved reference sheet: the checks leave that face to a person (review.run_checks'
+face_unchecked), after the other faults have had their fixes.
 
 Every ledger entry logged inside a step carries {"review_step", "job_id"} (ledger.tagged), so a step's cost
 is exactly its own calls.
@@ -45,11 +47,12 @@ from pathlib import Path
 from typing import Callable
 
 from pipeline import finish, generate, ledger, logo, qa, repair, router
-from pipeline.compile import ROOT, Compiled, compile_spec, is_missing, load_json
+from pipeline.compile import ROOT, Compiled, compile_spec, load_json
 from pipeline.specs import colour_id, load_recipes
 
 from . import db, review
 from .brain.base import scrub
+from .review import has_face_reference
 
 DRAFTS = 3  # Cloudflare drafts per drafts job
 POLL_S = 1.0
@@ -101,13 +104,6 @@ def _write_spec(spec: dict) -> None:
 
 def _layout(job: dict) -> list[str]:
     return [job["layout"]] if job["kind"] == "final" and job["layout"] else []
-
-
-def has_face_reference(spec: dict) -> bool:
-    """Whether the shot's cast member has an approved reference sheet (brand/cast.json) on disk."""
-    cast = (spec["shot"].get("model") or {}).get("cast")
-    sheet = load_json("brand/cast.json")["cast"].get(cast, {}).get("reference_sheet")
-    return not is_missing(sheet) and (ROOT / sheet).is_file()
 
 
 def _in_finals(path: Path) -> bool:
@@ -305,7 +301,9 @@ class Worker:
             return "needs_person", r["reason"], None
         action, code = r["next"], r["next_code"]
         entry = ledger.find(ROOT / step["input"]) or {}
-        if action == "approve":
+        if action == "approve":  # every other fault was fixed first; a face nobody could compare goes to a person
+            if r.get("face_unchecked"):
+                return "needs_person", FACE_UNCHECKED, None
             return "ready", None, None
         if action == "finish":
             if _colour_corrections(entry) >= COLOUR_CORRECTIONS_PER_RENDER:

@@ -9,7 +9,7 @@ As soon as an image is made, Studio checks it:
 - **Colour:** measured against the colour you chose.
 - **Stray text:** any text that is not your design or the neck label.
 - **Logo:** its text, shape, colours and size, when the image has a design.
-- **Garment details:** an AI looks at the drawcords, cuffs and hem, shoulder seams, pocket, hood, drape and, on a model, the hands and face.
+- **Garment details:** an AI looks at the drawcords, cuffs and hem, shoulder seams, pocket, hood, drape and, on a model, the hands. It checks the face only once that model has an approved reference photo.
 
 The results show beside the image: ✓ passed, ✗ a problem, ↻ being fixed, ? please look. A box on the image marks where a check found something. Read the checks explains each one.
 
@@ -19,7 +19,7 @@ The results show beside the image: ✓ passed, ✗ a problem, ↻ being fixed, ?
 - **A detail wrong** (drawcords, cuffs, pocket, hood, hands, stray text): repaired one change at a time, up to {{limits.repairs_per_render}} repairs per image. After that, Studio makes a new image.
 - **Something a repair can't fix** (colour far off, fabric too thin for its weight, framing): a new image, up to {{limits.regenerations_per_shot}} new images per shot.
 - **Logo wrong:** one repair. If it still fails, the real artwork is placed on the approved reference packshot (front packshots only); otherwise it waits for you.
-- **Face wrong:** while the model has no approved reference photo, Studio does not remake it by itself; it waits for you.
+- **Face:** until the model has an approved reference photo, Studio cannot check the face. Its line shows ? Not checked, any other fixes still run, and then the image waits for you to look at the face. Until then, Studio never makes a new image because of the face.
 
 Every fix is checked again. The card shows the spend so far and the repairs and new images left. Open **Show what ran automatically** to see each step and its cost. The most it could cost was shown before **Approve & create**.
 

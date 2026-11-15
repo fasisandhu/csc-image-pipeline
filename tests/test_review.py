@@ -234,6 +234,60 @@ def test_measured_lines_left_to_the_scripts(env):
     assert "Shows: the raised 3D puff logo" in asked
 
 
+MAYA_SID = "ovs-wblack-450-maya-front"  # on-model, Maya: no approved reference sheet in brand/cast.json
+FACE = "Face matches the cast sheet for Maya"
+NO_PHOTO = {"text": FACE, "ok": None, "code": None, "note": "No approved reference photo of Maya yet."}
+
+
+def test_face_left_to_a_person_without_a_reference_sheet(env):
+    """I2: with no approved cast sheet the AI is never asked about the face. The line is added afterwards as "not
+    checked", so the rest of the check stands (complete, with its automatic fixes) and the face waits for a person."""
+    assert FACE in qa.checklist(MAYA_SID) and review.has_face_reference(json.loads(
+        (ROOT / "specs" / f"{MAYA_SID}.json").read_text(encoding="utf-8"))) is False
+    r = env.run(MAYA_SID)
+    asked = env.brain.calls[0]["schema"]["properties"]["lines"]["items"]["properties"]["text"]["enum"]
+    assert FACE not in asked and "Hands correct (five fingers, not fused into pockets)" in asked
+    assert r["visual"]["lines"][-1] == NO_PHOTO
+    assert r["complete"] is True and r["reason"] is None and r["codes"] == []
+    assert (r["next"], r["face_unchecked"]) == ("approve", True)
+    ev = qa_events(env.rows)[-1]
+    assert ev["face_unchecked"] is True and ev["complete"] is True and ev["visual"]["lines"][-1] == NO_PHOTO
+
+    # another fault still gets its automatic fix
+    env.brain = FakeBrain(fail_line("Two drawcords, equal length, metal aglets, through eyelets", "drawcord_shape"))
+    r = env.run(MAYA_SID)
+    assert (r["next"], r["next_code"], r["face_unchecked"]) == ("repair", "drawcord_shape", True)
+
+
+def test_face_judged_once_a_reference_sheet_exists(env, monkeypatch):
+    monkeypatch.setattr(review, "has_face_reference", lambda spec: True)
+    r = env.run(MAYA_SID)
+    asked = env.brain.calls[0]["schema"]["properties"]["lines"]["items"]["properties"]["text"]["enum"]
+    assert FACE in asked and r["face_unchecked"] is False
+    assert [line for line in r["visual"]["lines"] if line["text"] == FACE][0]["ok"] is True
+    assert qa_events(env.rows)[-1]["face_unchecked"] is False
+
+    # a packshot has no face to check
+    r = env.run(SID)
+    assert r["face_unchecked"] is False and not any(line["text"].startswith("Face") for line in r["visual"]["lines"])
+
+
+def test_face_line_found_by_its_checklist_id(env, monkeypatch):
+    """The face line is found through brand/qa_checklist.json's id "face", not by its wording; an id that is gone
+    stops the check loudly instead of asking the AI about a face it cannot compare."""
+    real = review.load_json
+
+    def renamed(path):
+        doc = real(path)
+        if path == "brand/qa_checklist.json":
+            doc = {**doc, "items": [{**i, "id": "face_match"} if i["id"] == "face" else i for i in doc["items"]]}
+        return doc
+    monkeypatch.setattr(review, "load_json", renamed)
+    with pytest.raises(ValueError, match="face"):
+        env.run(MAYA_SID)
+    assert env.calls == [] and env.brain.calls == []  # nothing spent
+
+
 def test_budget_stop_spends_nothing_more(env):
     """A cap reached by any check stops the checks: no later check, no brain call, flagged with a reason."""
     env.stray = ledger.BudgetError("Gemini cap: $8.99 spent this month + $0.005 would exceed $9.00")

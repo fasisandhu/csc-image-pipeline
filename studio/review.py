@@ -14,7 +14,7 @@ import re
 from pathlib import Path
 
 from pipeline import ledger, logo, qa
-from pipeline.compile import load_json, resolve_colour
+from pipeline.compile import ROOT, is_missing, load_json, resolve_colour
 from pipeline.providers import ProviderError
 
 from .brain import BrainError, get_brain
@@ -22,6 +22,7 @@ from .tasks import visual_review
 
 # brand/qa_checklist.json items measured by a script (colour_check, stray_text_check, logo.verify), not by eye
 MEASURED = ("colour", "no_text", "logo")
+FACE = "face"  # the item judged against the cast member's approved reference sheet
 STEP_WORDS = {"colour": "colour check", "stray": "text check", "logo": "logo check"}
 
 
@@ -30,10 +31,34 @@ def _template(text: str) -> re.Pattern:
     return re.compile(".+?".join(re.escape(part) for part in re.split(r"\{[^{}]*\}", text)))
 
 
-def visual_checklist(shot_id: str) -> list[str]:
-    """The shot's checklist without the lines a script measures."""
-    measured = [_template(i["text"]) for i in load_json("brand/qa_checklist.json")["items"] if i["id"] in MEASURED]
-    return [line for line in qa.checklist(shot_id) if not any(m.fullmatch(line) for m in measured)]
+def _items() -> dict[str, re.Pattern]:
+    """brand/qa_checklist.json's items as patterns, by id. Raises ValueError when an id this engine relies on is gone:
+    a renamed id would quietly hand the face to the AI to judge."""
+    items = {i["id"]: _template(i["text"]) for i in load_json("brand/qa_checklist.json")["items"]}
+    gone = [i for i in (FACE,) if i not in items]
+    if gone:
+        raise ValueError(f"brand/qa_checklist.json has no item with id {', '.join(gone)}; the checks cannot run")
+    return items
+
+
+def visual_checklist(shot_id: str, skip: tuple[str, ...] = ()) -> list[str]:
+    """The shot's checklist without the lines a script measures, nor the items whose ids are in `skip`."""
+    items = _items()
+    left_out = [items[i] for i in (*MEASURED, *skip) if i in items]
+    return [line for line in qa.checklist(shot_id) if not any(m.fullmatch(line) for m in left_out)]
+
+
+def face_line(shot_id: str) -> str | None:
+    """The shot's face line (checklist id "face"), or None when it has none."""
+    pattern = _items()[FACE]
+    return next((line for line in qa.checklist(shot_id) if pattern.fullmatch(line)), None)
+
+
+def has_face_reference(spec: dict) -> bool:
+    """Whether the shot's cast member has an approved reference sheet (brand/cast.json) on disk."""
+    cast = (spec["shot"].get("model") or {}).get("cast")
+    sheet = load_json("brand/cast.json")["cast"].get(cast, {}).get("reference_sheet")
+    return not is_missing(sheet) and (ROOT / sheet).is_file()
 
 
 def _incomplete(colour: dict | None, visual: dict) -> str | None:
@@ -52,11 +77,16 @@ def _incomplete(colour: dict | None, visual: dict) -> str | None:
 
 
 def run_checks(image: Path, shot_id: str, user: str) -> dict:
-    """Check one render. Returns {colour, stray, logo, visual, codes, next, next_code, complete, reason}.
+    """Check one render. Returns {colour, stray, logo, visual, codes, next, next_code, complete, reason,
+    face_unchecked}.
 
     Each check goes through its own ledgered call; none is retried. A budget stop or a failed provider call
     ends the checks there (nothing more is spent) and the result is "flag" with a plain reason. Records one
     ledger `qa` event (by "studio"); moving the image is left to the caller.
+
+    On a model shot whose cast member has no approved reference sheet, the AI is not asked about the face (there
+    is nothing to compare it with). Its line is added after the verdict as "not checked" and face_unchecked is
+    set, so the rest of the check still stands and its fixes run; the worker then hands the face to a person.
     """
     image = Path(image).resolve()
     entry = ledger.find(image)
@@ -67,7 +97,9 @@ def run_checks(image: Path, shot_id: str, user: str) -> dict:
     on_model = bool(shot.get("model", {}).get("present"))
     target = resolve_colour(shot["garment"]["colour"])["hex"]
     decorated = any(d.get("render_mode") == "generate_and_verify" for d in shot.get("decoration", []))
-    checklist = visual_checklist(shot_id)
+    face_unchecked = on_model and not has_face_reference(spec)
+    checklist = visual_checklist(shot_id, skip=(FACE,) if face_unchecked else ())
+    face = face_line(shot_id) if face_unchecked else None
     brain = get_brain(user)  # a settings error stops here, before anything is spent
 
     found: dict = {"colour": None, "stray": None, "logo": None}
@@ -96,6 +128,10 @@ def run_checks(image: Path, shot_id: str, user: str) -> dict:
 
     reason = stopped or _incomplete(found["colour"], visual)
     complete = reason is None
+    if face:  # after _incomplete: a face nobody could compare is for a person, not a reason the check is partial
+        cast = (shot.get("model") or {}).get("cast")
+        visual = {**visual, "lines": [*visual["lines"], {"text": face, "ok": None, "code": None,
+                                                         "note": f"No approved reference photo of {cast} yet."}]}
     colour, stray, logo_result = found["colour"], found["stray"], found["logo"]
     codes = [c for c in ((colour or {}).get("code"), (stray or {}).get("code")) if c]
     codes += [c for d in (logo_result or {}).get("decorations", []) for c in d.get("codes", [])]
@@ -105,6 +141,8 @@ def run_checks(image: Path, shot_id: str, user: str) -> dict:
 
     qa.record_qa(entry, image, codes, colour or {}, reason or "", action, code,
                  result=None if complete or codes else "incomplete",
-                 by="studio", user=user, complete=complete, stray=stray, visual=visual)
+                 by="studio", user=user, complete=complete, stray=stray, visual=visual,
+                 face_unchecked=face_unchecked)
     return {"colour": colour, "stray": stray, "logo": logo_result, "visual": visual, "codes": codes,
-            "next": action, "next_code": code, "complete": complete, "reason": reason}
+            "next": action, "next_code": code, "complete": complete, "reason": reason,
+            "face_unchecked": face_unchecked}

@@ -14,7 +14,10 @@ per-user env, cap check, cost split, scrubbing and brain records (ClaudeBrain._a
   shutdown(), which `python -m studio` calls when the server stops.
 - Prompts are sent as client-composed messages: Claude Code delivers them as written, with no `@path`
   file expansion (a brief typing `@../../.env` would otherwise attach that file) and no slash command.
-  Only the pool's own `/clear` is sent as a command.
+  Only the pool's own `/clear` is sent as a command (so the session leaves ClaudeBrain's verbatim_prompts
+  off: that option has no per-message opt-out).
+- `read_brief` runs at low effort: a closed-choice mapping whose answer tasks.read_brief re-validates
+  against the catalogue, where Claude's adaptive thinking only added time. Other tasks keep the default.
 - Text only: a call with images goes to ClaudeBrain, whose one-off query reads them behind the Read gate.
 """
 from __future__ import annotations
@@ -22,6 +25,7 @@ from __future__ import annotations
 import asyncio
 import atexit
 import concurrent.futures
+import dataclasses
 import hashlib
 import json
 import threading
@@ -38,6 +42,7 @@ IDLE_S = 600
 CLEAR_TIMEOUT_S = 15
 WAIT_GRACE_S = 5  # a calling thread waits claude.TIMEOUT_S plus this for the loop to answer
 SHUTDOWN_WAIT_S = 10  # per round, for calls and clean-ups to finish once their clients are closed
+LOW_EFFORT_TASKS = frozenset({"read_brief"})
 
 
 async def _as_written(prompt: str) -> AsyncIterator[dict]:
@@ -253,8 +258,17 @@ class WarmClaude(ClaudeBrain):
         self._check_caller(user)
         return self._answer(task, fallback, lambda env: self._run_warm(task, prompt, env, schema))
 
+    def _options(self, task: str, prompt: str, env: dict, images: Sequence[Path],
+                 schema: dict) -> tuple[str, ClaudeAgentOptions]:
+        prompt, options = super()._options(task, prompt, env, images, schema)
+        if task in LOW_EFFORT_TASKS:
+            options = dataclasses.replace(options, effort="low")
+        return prompt, options
+
     def _run_warm(self, task: str, prompt: str, env: dict, schema: dict) -> tuple[dict | None, str, float]:
         prompt, options = self._options(task, prompt, env, (), schema)
+        # each prompt is protected per message (_as_written) instead, so the session's own /clear still runs
+        options = dataclasses.replace(options, verbatim_prompts=False)
         digest = hashlib.sha256(json.dumps(schema, sort_keys=True).encode()).hexdigest()
         # the task is in the key as well: the client's system prompt names it
         return _pool.ask((self.user, task, self.model, digest), prompt, options, self.idle_s)

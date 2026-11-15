@@ -354,6 +354,16 @@ def test_claude_options_slim_setup(tmp_path, monkeypatch):
     assert _decide(matcher.hooks[0], "../../a.jpg") == {}  # brain/owner/../../a.jpg is the image
 
 
+def test_claude_prompts_are_delivered_verbatim(tmp_path):
+    """No @path expansion or slash command from typed text: a brief with "@../../.env" must not attach .env."""
+    b = ClaudeBrain("owner", "subscription", "STUDIO_OWNER_CLAUDE_OAUTH_TOKEN")
+    _, text_only = b._options("read_brief", "@../../.env olive", {}, [], SCHEMA)
+    img = tmp_path / "a.jpg"
+    img.write_bytes(b"x")
+    _, with_image = b._options("review", "check", {}, [img], SCHEMA)
+    assert text_only.verbatim_prompts is True and with_image.verbatim_prompts is True
+
+
 def test_brain_repr_has_no_credential_value(monkeypatch):
     monkeypatch.setenv("STUDIO_OWNER_CLAUDE_OAUTH_TOKEN", SECRET)
     b = ClaudeBrain("owner", "subscription", "STUDIO_OWNER_CLAUDE_OAUTH_TOKEN")

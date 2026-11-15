@@ -155,9 +155,11 @@ class ClaudeBrain:
         else:
             tools = {"tools": [], "max_turns": 2}
         system = f"You are the Cut Sew Club studio brain doing the task '{task}'; answer only with the JSON asked for."
+        # verbatim_prompts: typed text (a brief) is delivered as written, so "@../../.env" in it never makes
+        # Claude Code attach that file, and a leading "/" never runs a command
         options = ClaudeAgentOptions(
             model=self.model, cwd=str(cwd), env=env, setting_sources=[], system_prompt=system,
-            output_format={"type": "json_schema", "schema": schema}, **tools,
+            output_format={"type": "json_schema", "schema": schema}, verbatim_prompts=True, **tools,
         )
         return prompt, options
 

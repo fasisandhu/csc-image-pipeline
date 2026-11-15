@@ -1,3 +1,5 @@
+import pytest
+
 from studio.tasks import read_brief
 
 
@@ -27,6 +29,24 @@ def test_invented_values_dropped():
 def test_unknown_colour_becomes_hint():
     r = run({"colour": None, "colour_word": "teal"})
     assert "colour" not in r["answers"] and r["colour_hint"] == "teal" and "colour" in r["unknown"]
+
+
+@pytest.mark.parametrize("word, hint", [
+    ("teal", "teal"),
+    ("  dark green ", "dark green"),
+    ("blue-grey", "blue-grey"),
+    ("Payne's grey", "Payne's grey"),
+    ("Payne’s grey", "Payne’s grey"),
+    ("a" * 40, "a" * 40),
+    ("a" * 41, None),
+    ("teal/../../.env", None),
+    ("GEMINI_API_KEY=abc", None),
+    ("teal 2", None),
+    ("", None),
+])
+def test_colour_hint_is_plain_words_only(word, hint):
+    """Defence in depth: the free-text hint reaches the browser, so only a short plain colour word passes."""
+    assert run({"colour": None, "colour_word": word})["colour_hint"] == hint
 
 
 def test_existing_answers_win():

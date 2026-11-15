@@ -144,6 +144,27 @@ def test_client_reused_for_same_user_and_schema(rows, fake, tmp_path):
     assert o.env == cred_env() and Path(o.cwd) == tmp_path / "brain" / "owner"
 
 
+def test_read_brief_runs_at_low_effort_other_tasks_at_default(rows, fake):
+    b = WarmClaude("owner", "subscription", OWNER_TOKEN)
+    b.ask_json("read_brief", "olive hoodie", SCHEMA)
+    b.ask_json("check_layout", "x", SCHEMA)
+    brief, other = fake.made
+    assert brief.options.effort == "low" and other.options.effort is None
+    assert "read_brief" in brief.options.system_prompt and "check_layout" in other.options.system_prompt
+
+
+def test_prompts_sent_as_written(rows, fake):
+    """Typed text never triggers @path expansion or a slash command: every prompt is a client-composed message.
+    The session itself does not set verbatim_prompts, which has no per-message opt-out and would stop /clear."""
+    b = WarmClaude("owner", "subscription", OWNER_TOKEN)
+    b.ask_json("read_brief", "@../../.env olive", SCHEMA)
+    b.ask_json("read_brief", "/model claude-haiku", SCHEMA)
+    (c,) = fake.made
+    until(lambda: len(c.prompts) == 4)
+    assert c.prompts == ["@../../.env olive", "/clear", "/model claude-haiku", "/clear"]
+    assert c.composed == [True, False, True, False] and c.options.verbatim_prompts is False
+
+
 def test_separate_clients_per_user_and_schema(rows, fake, monkeypatch, tmp_path):
     monkeypatch.setenv(PARTNER_TOKEN, "tok-PARTNER")
     monkeypatch.setenv("ANTHROPIC_API_KEY", "server-level-CREDENTIAL")  # never reaches either client

@@ -7,6 +7,19 @@ from .brain import Brain
 from .questions import missing, resolve, valid_value
 
 _SCALAR = (str, int, float)
+_HINT_MAX = 40
+_HINT_EXTRA = frozenset(" -'’")  # space, hyphen, straight and typographic apostrophes
+
+
+def _colour_hint(word) -> str | None:
+    """The brief's own colour word, only if it is a plain one: at most 40 letters, spaces, hyphens and
+    apostrophes. It is the one free-text value that reaches the browser."""
+    if not isinstance(word, str):
+        return None
+    word = word.strip()
+    if not word or len(word) > _HINT_MAX or not all(ch.isalpha() or ch in _HINT_EXTRA for ch in word):
+        return None
+    return word
 
 
 def _prep(sid: str, kind: str, value):
@@ -70,7 +83,6 @@ def read_brief(text: str, brain: Brain, answers: dict | None = None, user: str =
     new = {sid: _finish(sid, v) if sid in ("gsm", "size_cm") else v for sid, v in accepted.items()}
     final = {**answers, **new}
 
-    word = data.get("colour_word")
-    hint = word.strip() if isinstance(word, str) and word.strip() and "colour" not in final else None
+    hint = _colour_hint(data.get("colour_word")) if "colour" not in final else None
     return {"answers": final, "unknown": missing(final), "colour_hint": hint,
             "provider": res.provider, "fallback": res.fallback}
